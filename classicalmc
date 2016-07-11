@@ -1,0 +1,144 @@
+#!/usr/bin/env python
+from numpy import abs, cos, exp, max, min, pi, sum
+import functools, sys
+import numpy as np
+import numpy.random as npr
+import matplotlib.pyplot as plt
+
+def rejection_sample(weigh, sampler):
+    '''
+    `weigh: (Sample) -> Float` is a function used to evaluate the relative
+    likelihood of the given sample (e.g. a partition function in statistical
+    mechanics).  It must be scaled to return a value between 0 and 1.
+
+    `sampler: () -> Sample` is a function that generates a random sample.
+    '''
+    n = 0
+    while True:
+        sample = sampler()
+        if npr.rand() < weigh(sample):
+            sys.stdout.write("!\n")
+            sys.stdout.flush()
+            return sample
+        sys.stdout.write(".")
+        sys.stdout.flush()
+        n += 1
+
+def metropolis_sample(weigh, sample0, perturb, num_steps):
+    '''
+    `weigh: (Sample) -> Float` is a function used to evaluate the relative
+    likelihood of the given sample (e.g. a partition function in statistical
+    mechanics).  It must return a positive value.
+
+    `sample0: Sample` is the initial sample.
+
+    `perturb: (Sample) -> Sample` generates a new sample from an existing
+    sample.
+
+    `num_steps: Int` is the number of accepted Metropolis steps to run before
+    returning the sample.
+    '''
+    sample = sample0
+    weight = weigh(sample)
+    n = 0
+    while n < num_steps:
+        new_sample = perturb(sample)
+        new_weight = weigh(new_sample)
+        if npr.rand() < new_weight / weight:
+            sample = new_sample
+            weight = new_weight
+            sys.stdout.write(":")
+            sys.stdout.flush()
+            n += 1
+        else:
+            sys.stdout.write(".")
+            sys.stdout.flush()
+    sys.stdout.write("!\n")
+    sys.stdout.flush()
+    return sample
+
+def random_perturb(dx, x):
+    '''Randomly perturb a vector by up to `dx`, which can be either a scalar
+    or a vector of the same shape.'''
+    return x + dx * (npr.rand(*x.shape) - .5)
+
+def wrap_vector(X):
+    return np.array([x % 1. for x in X])
+
+def V1(x):
+    return 1. + cos(20. * pi * x)
+
+def V2(x1, x2):
+    return V0 * (abs(x1 - x2) < .05)
+
+def Z(beta, X):
+    return exp(-beta * (sum(V1(X)) +
+                        sum(V2(x, y)
+                            for x in X
+                            for y in X
+                            if x < y)))
+
+# coefficient of the two-body potential
+V0 = .1
+
+# number of particles
+num_particles = 10
+
+# number of points to plot (used for analytic curves only)
+num_xs = 250
+
+# number of bins in histograms
+num_bins = 50
+
+# number of samples to generate
+num_samples = 100
+
+# methods to use
+methods = [
+#    "rejection",                   # this can take a very long time for V0 > 1
+    "metropolis",
+]
+
+random_X = lambda: npr.rand(num_particles)
+
+# Metropolis-only: number of accepted Metropolis steps to take before actually
+#                  using the sample
+metropolis_step_size = 10
+
+# Metropolis-only: generate random X
+get_initial_X = random_X
+
+# generate
+dx = .2
+betas = [.2, 1.]
+# 'wrap_vector' gives us periodic boundary conditions;
+# using hard-wall boundary conditions would cause a bias
+perturb = lambda X: wrap_vector(random_perturb(dx, X))
+
+xs = np.linspace(0, 1, 250)
+for beta in betas:
+    for method in methods:
+        Z_beta = functools.partial(Z, beta)
+
+        # Xs : [SampleIndex] -> [ParticleIndex] -> Position
+        if method == "rejection":
+            Xs = np.array([rejection_sample(Z_beta, random_X)
+                           for _ in range(num_samples)])
+        elif method == "metropolis":
+            Xs = []
+            X = get_initial_X()
+            for i in range(num_samples):
+                X = metropolis_sample(Z_beta, X, perturb, metropolis_step_size)
+                Xs.append(X)
+            Xs = np.array(Xs)
+        else:
+            raise ValueError("unknown method: {0}".format(method))
+
+        fig, ax = plt.subplots()
+        ax.plot(xs, V1(xs), label="V1")
+        ax.hist(Xs.flatten(), bins=num_bins, range=(0., 1.),
+                normed=True, linewidth=0, color="#cccccc")
+        ax.plot(xs, [Z_beta(np.array([x])) for x in xs])
+        ax.set_title("beta={0}, method={1}".format(beta, method))
+
+plt.show()
