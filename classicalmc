@@ -17,7 +17,7 @@ def rejection_sample(weigh, sampler):
     while True:
         sample = sampler()
         if npr.rand() < weigh(sample):
-            sys.stdout.write("!\n")
+            sys.stdout.write("\n")
             sys.stdout.flush()
             return sample
         sys.stdout.write(".")
@@ -46,7 +46,7 @@ def metropolis_sample(weigh, sample0, perturb, num_steps):
         if npr.rand() * weight < new_weight:
             sample = new_sample
             weight = new_weight
-            sys.stdout.write(":")
+            sys.stdout.write("o")
         else:
             sys.stdout.write(".")
         sys.stdout.flush()
@@ -81,14 +81,13 @@ def Z(beta, X):
     return exp(-beta * (total_V1(X) + total_V2(X)))
 
 # coefficient of the two-body potential
-V0 = 1.
+V0 = .1
 
 # number of particles
 num_particles = 10
 
 # the betas (inverse temperature) to be plotted
-#betas = [.2, 1.]
-betas = [1.]
+betas = [.2, 1.]
 
 # methods to use
 methods = [
@@ -109,7 +108,7 @@ random_X = lambda: npr.rand(num_particles)
 
 # Metropolis-only: number of Metropolis steps to take before actually using
 #                  the sample
-metropolis_step_size = 25
+metropolis_step_count = 100
 
 # Metropolis-only: function used to generate the initial configuration
 get_initial_X = random_X
@@ -136,7 +135,7 @@ for beta in betas:
             Xs = []
             X = get_initial_X()
             for i in range(num_samples):
-                X = metropolis_sample(Z_beta, X, perturb, metropolis_step_size)
+                X = metropolis_sample(Z_beta, X, perturb, metropolis_step_count)
                 Xs.append(X)
             Xs = np.array(Xs)
         else:
@@ -159,6 +158,7 @@ for beta in betas:
         ax.hist(Xs.flatten(), bins=num_bins, range=(0., 1.),
                 normed=True, linewidth=0, color="#cccccc")
         ax.plot(xs, [Z_beta(np.array([x])) for x in xs])
+        ax.legend()
         ax.set_title("beta={0}, method={1}".format(beta, method))
 
 for result in results:
