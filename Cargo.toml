@@ -3,6 +3,11 @@ name = "qmc"
 version = "0.1.0"
 authors = []
 
+[lib]
+name = "qmc"
+crate-type = ["dylib", "rlib"]
+
 [dependencies]
 clap = "2"
+modulo = "0.1.1"
 rand = "0.3"
