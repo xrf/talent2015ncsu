@@ -1,6 +1,10 @@
+pub mod mt;
+pub mod utils;
+
 extern crate modulo;
 extern crate rand;
 
+use utils::MyRng;
 use std::io::Write;
 use std::f64;
 use std::f64::consts::PI;
@@ -18,7 +22,7 @@ fn rejection_sample<R, T: ?Sized, W, S>(rng: &mut R,
                                         sampler: S,
                                         max_attempts: u64) -> u64 where
     R: Rng,
-    W: Fn(&T) -> f64,
+    W: Fn(&T) -> f64, // should we use Fn or FnMut?
     S: Fn(&mut R, &mut T) -> () {
     for i in 0 .. max_attempts {
         sampler(rng, sample);
@@ -101,23 +105,21 @@ fn partition_function(beta: f64, v0: f64, r: &[f64]) -> f64 {
     (-beta * (total_potential_v1(r) + total_potential_v2(v0, r))).exp()
 }
 
-pub type RngType = rand::isaac::Isaac64Rng;
-
 #[no_mangle]
 pub unsafe extern fn qmc_rng_new(seed: *const u64,
-                                 seed_len: u64) -> *mut RngType {
-    Box::into_raw(Box::new(RngType::from_seed(
+                                 seed_len: u64) -> *mut MyRng {
+    Box::into_raw(Box::new(MyRng::from_seed(
         std::slice::from_raw_parts(seed, seed_len as usize))))
 }
 
 #[no_mangle]
-pub unsafe extern fn qmc_rng_del(rng: *mut RngType) {
+pub unsafe extern fn qmc_rng_del(rng: *mut MyRng) {
     assert!(!rng.is_null());
     Box::from_raw(rng);
 }
 
 #[no_mangle]
-pub unsafe extern fn qmc_cmc_rejection(rng: *mut RngType,
+pub unsafe extern fn qmc_cmc_rejection(rng: *mut MyRng,
                                        beta: f64,
                                        v0: f64,
                                        num_particles: u64,
@@ -128,7 +130,7 @@ pub unsafe extern fn qmc_cmc_rejection(rng: *mut RngType,
                   std::slice::from_raw_parts_mut(r, num_particles as usize))
 }
 
-fn cmc_rejection(rng: &mut RngType,
+fn cmc_rejection(rng: &mut MyRng,
                  beta: f64,
                  v0: f64,
                  r: &mut [f64]) -> u64 {
@@ -142,7 +144,7 @@ fn cmc_rejection(rng: &mut RngType,
 }
 
 #[no_mangle]
-pub unsafe extern fn qmc_cmc_metropolis(rng: *mut RngType,
+pub unsafe extern fn qmc_cmc_metropolis(rng: *mut MyRng,
                                         beta: f64,
                                         v0: f64,
                                         num_particles: u64,
@@ -157,12 +159,12 @@ pub unsafe extern fn qmc_cmc_metropolis(rng: *mut RngType,
                    std::slice::from_raw_parts_mut(r2, num_particles as usize))
 }
 
-pub extern fn cmc_metropolis(rng: &mut RngType,
-                             beta: f64,
-                             v0: f64,
-                             num_steps: u64,
-                             r: &mut [f64],
-                             r2: &mut [f64]) {
+fn cmc_metropolis(rng: &mut MyRng,
+                  beta: f64,
+                  v0: f64,
+                  num_steps: u64,
+                  r: &mut [f64],
+                  r2: &mut [f64]) {
     assert!(r.len() == r2.len());
     let step_size = 0.3;
     metropolis_sample(rng, r, |r| {

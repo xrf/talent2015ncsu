@@ -1,27 +1,37 @@
-#[macro_use]
-extern crate clap;
+extern crate docopt;
 extern crate rand;
+extern crate rustc_serialize;
 
-use clap::{Arg, App};
-use rand::distributions::{IndependentSample, Range};
+use rand::Rng;
+
+const USAGE: &'static str = "
+Usage:
+  pi <num-samples>
+  pi --help
+
+Options:
+  -h --help         Show this screen.
+  <num-samples>     Number of samples.
+";
+
+#[derive(Debug, RustcDecodable)]
+struct Args {
+    arg_num_samples: u64,
+}
 
 fn main() {
-    let matches = App::new("pi")
-        .arg(Arg::with_name("NUM_SAMPLES"))
-        .get_matches();
-
-    let num_samples =
-        value_t!(matches, "NUM_SAMPLES", u64)
+    let args: Args = docopt::Docopt::new(USAGE)
+        .and_then(|d| d.decode())
         .unwrap_or_else(|e| e.exit());
 
-    let between = Range::new(-1.0f64, 1.0);
+    let num_samples = args.arg_num_samples;
     let mut rng = rand::thread_rng();
 
     println!("calculating pi with {} samples ...", num_samples);
     let mut count = 0;
     for _ in 0 .. num_samples {
-        let x = between.ind_sample(&mut rng);
-        let y = between.ind_sample(&mut rng);
+        let x = rng.next_f64();
+        let y = rng.next_f64();
         if x * x + y * y <= 1.0 {
             count += 1;
         }
