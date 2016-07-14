@@ -1,6 +1,7 @@
 extern crate docopt;
 extern crate rand;
 extern crate rustc_serialize;
+#[macro_use]
 extern crate qmc;
 
 use qmc::mt;
@@ -31,6 +32,8 @@ fn main() {
 
     println!("using seed: {:?}", &args.flag_seed.value);
 
+unsafe {
+
     let seed = [0x3f, 0xc9, 0x07]; // 510271;
     let num_trials = 1000; // numtrials
     let alpha: f64 = 1.4;
@@ -46,18 +49,18 @@ fn main() {
 
     let mut e = 0.6; // E
 
-    let mut wprod_tmp = Vec::new();
-    let mut wprod = vec![1.0; population_0];
+    let mut wprod_tmp = Vec::with_capacity(population_0 * 2);
+    let mut wprod = vec![1.0; population_0 * 2];
 
-    let mut x_tmp = Vec::new();
-    let mut x = Vec::with_capacity(population_0);
-    for _ in 0 .. x.capacity() {
-        x.push(mt::gaussrnd() / alpha.sqrt());
+    let mut x_tmp = Vec::with_capacity(population_0 * 2);
+    let mut x = vec![0.0; population_0 * 2];
+    for i in 0 .. population_0 {
+        ix!(x, i) = mt::gaussrnd() / alpha.sqrt();
     }
 
     let mut population = population_0; // numwalkm
 
-    let mut w = Vec::new();
+    let mut w = Vec::with_capacity(population_0 * 2);
 
     let mut old_x = &mut x;
     let mut new_x = &mut x_tmp;
@@ -69,19 +72,19 @@ fn main() {
         w.resize(population, 0.0);
         for i in 0 .. population {
             let r = mt::gaussrnd();
-            old_x[i] += r * sigma;
+            ix!(old_x, i) += r * sigma;
 
-            let v = 0.5 * omega.powi(2) * old_x[i].powi(2);
-            w[i] = (-(v - e) * dt).exp();
-            old_wprod[i] *= w[i];
+            let v = 0.5 * omega.powi(2) * ix!(old_x, i).powi(2);
+            ix!(w, i) = (-(v - e) * dt).exp();
+            ix!(old_wprod, i) *= ix!(w, i);
         }
 
         if trial_index % branch_interval == 0 {
             for i in 0 .. population {
-                let num_clones = (w[i] + mt::grnd()) as i64;
+                let num_clones = (ix!(w, i) + mt::grnd()) as i64;
                 for _ in 0 .. num_clones {
-                    new_x.push(old_x[i]);
-                    new_wprod.push(old_wprod[i]);
+                    new_x.push(ix!(old_x, i));
+                    new_wprod.push(ix!(old_wprod, i));
                 }
             }
             old_x.clear();
@@ -94,11 +97,11 @@ fn main() {
         let mut e_numerator = 0.0;
         let mut denominator = 0.0;
         for i in 0 .. population {
-            let u = (-0.5 * alpha * old_x[i].powi(2)).exp();
+            let u = (-0.5 * alpha * ix!(old_x, i).powi(2)).exp();
             e_numerator +=
-                0.5 * old_wprod[i] * u * (
-                    alpha + old_x[i].powi(2) * (omega.powi(2) - alpha.powi(2)));
-            denominator += old_wprod[i] * u;
+                0.5 * ix!(old_wprod, i) * u * (
+                    alpha + ix!(old_x, i).powi(2) * (omega.powi(2) - alpha.powi(2)));
+            denominator += ix!(old_wprod, i) * u;
         }
         e += if denominator < 1.0 { 0.01 } else { -0.01 };
         let energy = e_numerator / denominator;
@@ -110,5 +113,7 @@ fn main() {
             println!("");
         }
     }
+
+}
 
 }

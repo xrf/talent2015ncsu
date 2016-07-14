@@ -8,6 +8,18 @@ use rand::SeedableRng;
 
 pub type MyRng = rand::isaac::Isaac64Rng;
 
+#[macro_export]
+#[cfg(debug_assertions)]
+macro_rules! ix {
+    ( $v:expr , $i:expr ) => ($v[$i])
+}
+
+#[macro_export]
+#[cfg(not(debug_assertions))]
+macro_rules! ix {
+    ( $v:expr , $i:expr ) => (*$v.get_unchecked_mut($i))
+}
+
 // FIXME: does this work properly for signed integers??
 pub fn repack_u8s<T>(s: &[u8]) -> Vec<T> where
     T: BitOrAssign + Shl<usize, Output = T> + num::NumCast {
