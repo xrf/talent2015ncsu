@@ -32,11 +32,11 @@ fn main() {
     println!("using seed: {:?}", &args.flag_seed.value);
 
     let seed = [0x3f, 0xc9, 0x07]; // 510271;
-    let num_trials = 100000; // numtrials
+    let num_trials = 1000; // numtrials
     let alpha: f64 = 1.4;
     let omega: f64 = 1.0;
     let dt: f64 = 0.001;
-    let print_interval = 1000; // nprintevery
+    let print_interval = 100; // nprintevery
     let branch_interval = 10; // nbranchevery
     let population_0 = 100000;
 
