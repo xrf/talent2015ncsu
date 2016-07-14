@@ -21,7 +21,7 @@ Options:
     Seed for the random number generator in LE hexadecimal.
     [default is empty string]
 
-  --num-trials=<num-trials>
+  --num-steps=<num-steps>
     [default: 10000]
 
   --alpha=<alpha>
@@ -42,7 +42,7 @@ Options:
   --print-interval=<print-interval>
     [default: 1000]
 
-  --num-trials=<num-trials>
+  --num-steps=<num-steps>
     [default: 10000]
 
   --population=<population>
@@ -53,7 +53,7 @@ Options:
 #[derive(Debug, RustcDecodable)]
 struct Args {
     flag_seed: RandomSeed,
-    flag_num_trials: u64,
+    flag_num_steps: u64,
     flag_alpha: f64,
     flag_omega: f64,
     flag_dt: f64,
@@ -68,17 +68,17 @@ fn main() {
         .and_then(|d| d.decode())
         .unwrap_or_else(|e| e.exit());
 
-    println!("args: {:?}", args);
+    println!("# args: {:?}", args);
 
     let mut rng = rng_from_seed(&args.flag_seed.value);
 
-    let num_trials = args.flag_num_trials;
+    let num_steps = args.flag_num_steps;
     let alpha = args.flag_alpha;
     let omega = args.flag_omega;
     let dt = args.flag_dt;
     let print_interval = args.flag_print_interval;
     let branch_interval = args.flag_branch_interval;
-    let sigma = dt.sqrt();
+    let sqrt_dt = dt.sqrt(); // controls the rate of diffusion
     let population_0 = args.flag_population as usize;
     let mut population = population_0;
     let mut e = args.flag_energy;
@@ -102,21 +102,24 @@ unsafe {
     let mut old_wprod = &mut wprod;
     let mut new_wprod = &mut wprod_tmp;
 
-    for trial_index in 0 .. num_trials {
+    println!("[");
+    for step_index in 0 .. num_steps {
 
         // update walkers
         w.resize(population, 0.0);
         for i in 0 .. population {
+            // diffuse the position (this is the kinetic energy part)
             let StandardNormal(r) = rng.gen();
-            ix!(old_x, i) += r * sigma;
+            ix!(old_x, i) += r * sqrt_dt;
 
+            // update the weight (this is the potential energy part)
             let v = 0.5 * omega.powi(2) * ix!(old_x, i).powi(2);
             ix!(w, i) = (-(v - e) * dt).exp();
             ix!(old_wprod, i) *= ix!(w, i);
         }
 
         // perform branching
-        if trial_index % branch_interval == 0 {
+        if step_index % branch_interval == 0 {
             for i in 0 .. population {
                 let num_clones = (ix!(w, i) + rng.next_f64()) as i64;
                 for _ in 0 .. num_clones {
@@ -146,14 +149,16 @@ unsafe {
         }
         let energy = e_numerator / denominator;
 
-        if trial_index % print_interval == 0 {
-            println!("trial_index = {}", trial_index);
-            println!("time = {}", trial_index as f64 * dt);
-            println!("average energy = {}", energy);
-            println!("population = {}", population);
-            println!("");
+        if step_index % print_interval == 0 {
+            println!("{{");
+            println!(" 'step_index': {},", step_index);
+            println!(" 'time': {},", step_index as f64 * dt);
+            println!(" 'average_energy': {},", energy);
+            println!(" 'population': {},", population);
+            println!("}},");
         }
     }
+    println!("]");
 
 }
 
