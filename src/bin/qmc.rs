@@ -102,7 +102,7 @@ unsafe {
                     alpha + ix!(old_x, i).powi(2) * (omega.powi(2) - alpha.powi(2)));
             denominator += ix!(old_wprod, i) * u;
         }
-        e += if denominator < 1.0 { 0.01 } else { -0.01 };
+        e += if population <= population_0 { 0.01 } else { -0.01 };
         let energy = e_numerator / denominator;
         if trial_index % print_interval == 0 {
             println!("trial_index = {}", trial_index);
