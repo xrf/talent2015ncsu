@@ -10,18 +10,57 @@ use qmc::utils::*;
 
 const USAGE: &'static str = "
 Usage:
-  qmc [--seed <seed>]
-  qmc --help
+  qmc [options]
 
 Options:
-  -h --help         Show this screen.
-  -s --seed=<seed>  Seed for the random number generator in base 64
-                    [default is empty string].
+
+  -h --help
+    Show this screen.
+
+  -s --seed=<seed>
+    Seed for the random number generator in LE hexadecimal.
+    [default is empty string]
+
+  --num-trials=<num-trials>
+    [default: 10000]
+
+  --alpha=<alpha>
+    [default: 1.4]
+
+  --omega=<omega>
+    [default: 1.0]
+
+  --energy=<energy>
+    [default: 0.6]
+
+  --dt=<dt>
+    [default: 0.001]
+
+  --branch-interval=<branch-interval>
+    [default: 10]
+
+  --print-interval=<print-interval>
+    [default: 1000]
+
+  --num-trials=<num-trials>
+    [default: 10000]
+
+  --population=<population>
+    [default: 10000]
+
 ";
 
 #[derive(Debug, RustcDecodable)]
 struct Args {
     flag_seed: RandomSeed,
+    flag_num_trials: u64,
+    flag_alpha: f64,
+    flag_omega: f64,
+    flag_dt: f64,
+    flag_energy: f64,
+    flag_print_interval: u64,
+    flag_branch_interval: u64,
+    flag_population: u64,
 }
 
 fn main() {
@@ -29,37 +68,34 @@ fn main() {
         .and_then(|d| d.decode())
         .unwrap_or_else(|e| e.exit());
 
+    println!("args: {:?}", args);
+
     let mut rng = rng_from_seed(&args.flag_seed.value);
 
-    println!("using seed: {:?}", &args.flag_seed.value);
+    let num_trials = args.flag_num_trials;
+    let alpha = args.flag_alpha;
+    let omega = args.flag_omega;
+    let dt = args.flag_dt;
+    let print_interval = args.flag_print_interval;
+    let branch_interval = args.flag_branch_interval;
+    let sigma = dt.sqrt();
+    let population_0 = args.flag_population as usize;
+    let mut population = population_0;
+    let mut e = args.flag_energy;
 
 unsafe {
 
-    let num_trials = 1000; // numtrials
-    let alpha: f64 = 1.4;
-    let omega: f64 = 1.0;
-    let dt: f64 = 0.001;
-    let print_interval = 100; // nprintevery
-    let branch_interval = 10; // nbranchevery
-    let population_0 = 100000;
+    let mut wprod_tmp = Vec::with_capacity(population * 2);
+    let mut wprod = vec![1.0; population * 2];
 
-    let sigma = dt.sqrt();
-
-    let mut e = 0.6; // E
-
-    let mut wprod_tmp = Vec::with_capacity(population_0 * 2);
-    let mut wprod = vec![1.0; population_0 * 2];
-
-    let mut x_tmp = Vec::with_capacity(population_0 * 2);
-    let mut x = vec![0.0; population_0 * 2];
-    for i in 0 .. population_0 {
+    let mut x_tmp = Vec::with_capacity(population * 2);
+    let mut x = vec![0.0; population * 2];
+    for i in 0 .. population {
         let StandardNormal(r) = rng.gen();
         ix!(x, i) = r / alpha.sqrt();
     }
 
-    let mut population = population_0; // numwalkm
-
-    let mut w = Vec::with_capacity(population_0 * 2);
+    let mut w = Vec::with_capacity(population * 2);
 
     let mut old_x = &mut x;
     let mut new_x = &mut x_tmp;
@@ -68,6 +104,7 @@ unsafe {
 
     for trial_index in 0 .. num_trials {
 
+        // update walkers
         w.resize(population, 0.0);
         for i in 0 .. population {
             let StandardNormal(r) = rng.gen();
@@ -78,6 +115,7 @@ unsafe {
             ix!(old_wprod, i) *= ix!(w, i);
         }
 
+        // perform branching
         if trial_index % branch_interval == 0 {
             for i in 0 .. population {
                 let num_clones = (ix!(w, i) + rng.next_f64()) as i64;
@@ -93,6 +131,10 @@ unsafe {
             population = old_x.len();
         }
 
+        // adjust energy shift
+        e += if population <= population_0 { 0.01 } else { -0.01 };
+
+        // compute statistics
         let mut e_numerator = 0.0;
         let mut denominator = 0.0;
         for i in 0 .. population {
@@ -102,8 +144,8 @@ unsafe {
                     alpha + ix!(old_x, i).powi(2) * (omega.powi(2) - alpha.powi(2)));
             denominator += ix!(old_wprod, i) * u;
         }
-        e += if population <= population_0 { 0.01 } else { -0.01 };
         let energy = e_numerator / denominator;
+
         if trial_index % print_interval == 0 {
             println!("trial_index = {}", trial_index);
             println!("time = {}", trial_index as f64 * dt);
