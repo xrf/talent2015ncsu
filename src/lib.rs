@@ -9,7 +9,7 @@ use std::io::Write;
 use std::f64;
 use std::f64::consts::PI;
 use modulo::Mod;
-use rand::{Rng, SeedableRng};
+use rand::Rng;
 
 /// `weigh` is a function used to evaluate the relative likelihood of the
 /// given sample (e.g. a partition function in statistical mechanics).  It
@@ -106,10 +106,10 @@ fn partition_function(beta: f64, v0: f64, r: &[f64]) -> f64 {
 }
 
 #[no_mangle]
-pub unsafe extern fn qmc_rng_new(seed: *const u64,
-                                 seed_len: u64) -> *mut MyRng {
-    Box::into_raw(Box::new(MyRng::from_seed(
-        std::slice::from_raw_parts(seed, seed_len as usize))))
+pub unsafe extern fn qmc_rng_new(seed: *const u8,
+                                 seed_len: usize) -> *mut MyRng {
+    Box::into_raw(Box::new(utils::rng_from_seed(
+        std::slice::from_raw_parts(seed, seed_len))))
 }
 
 #[no_mangle]
