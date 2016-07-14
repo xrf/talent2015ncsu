@@ -4,7 +4,8 @@ extern crate rustc_serialize;
 #[macro_use]
 extern crate qmc;
 
-use qmc::mt;
+use rand::Rng;
+use rand::distributions::normal::StandardNormal;
 use qmc::utils::*;
 
 const USAGE: &'static str = "
@@ -34,7 +35,6 @@ fn main() {
 
 unsafe {
 
-    let seed = [0x3f, 0xc9, 0x07]; // 510271;
     let num_trials = 1000; // numtrials
     let alpha: f64 = 1.4;
     let omega: f64 = 1.0;
@@ -42,8 +42,6 @@ unsafe {
     let print_interval = 100; // nprintevery
     let branch_interval = 10; // nbranchevery
     let population_0 = 100000;
-
-    mt::seed(&seed);
 
     let sigma = dt.sqrt();
 
@@ -55,7 +53,8 @@ unsafe {
     let mut x_tmp = Vec::with_capacity(population_0 * 2);
     let mut x = vec![0.0; population_0 * 2];
     for i in 0 .. population_0 {
-        ix!(x, i) = mt::gaussrnd() / alpha.sqrt();
+        let StandardNormal(r) = rng.gen();
+        ix!(x, i) = r / alpha.sqrt();
     }
 
     let mut population = population_0; // numwalkm
@@ -71,7 +70,7 @@ unsafe {
 
         w.resize(population, 0.0);
         for i in 0 .. population {
-            let r = mt::gaussrnd();
+            let StandardNormal(r) = rng.gen();
             ix!(old_x, i) += r * sigma;
 
             let v = 0.5 * omega.powi(2) * ix!(old_x, i).powi(2);
@@ -81,7 +80,7 @@ unsafe {
 
         if trial_index % branch_interval == 0 {
             for i in 0 .. population {
-                let num_clones = (ix!(w, i) + mt::grnd()) as i64;
+                let num_clones = (ix!(w, i) + rng.next_f64()) as i64;
                 for _ in 0 .. num_clones {
                     new_x.push(ix!(old_x, i));
                     new_wprod.push(ix!(old_wprod, i));
