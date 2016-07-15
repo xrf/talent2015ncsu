@@ -1,0 +1,17 @@
+#!/usr/bin/env python
+import base64, os
+import numpy as np
+import numpy.random as npr
+import matplotlib.pyplot as plt
+from utils import *
+
+seed = base64.b16encode(os.urandom(20)).decode("ascii")
+print("seed: {0}".format(seed))
+data = run("qmc", **{
+    "seed": seed,
+    "population": 10000,
+    "num_steps": 10000,
+    "print_interval": 10,
+})
+plt.plot(data["time"], data["average_energy"])
+plt.show()
