@@ -17,7 +17,19 @@ macro_rules! ix {
 #[macro_export]
 #[cfg(not(debug_assertions))]
 macro_rules! ix {
-    ( $v:expr , $i:expr ) => (*$v.get_unchecked_mut($i))
+    ( $v:expr , $i:expr ) => (*(unsafe { $v.get_unchecked($i) }))
+}
+
+#[macro_export]
+#[cfg(debug_assertions)]
+macro_rules! ix_mut {
+    ( $v:expr , $i:expr ) => ($v[$i])
+}
+
+#[macro_export]
+#[cfg(not(debug_assertions))]
+macro_rules! ix_mut {
+    ( $v:expr , $i:expr ) => (*(unsafe { $v.get_unchecked_mut($i) }))
 }
 
 // FIXME: does this work properly for signed integers??

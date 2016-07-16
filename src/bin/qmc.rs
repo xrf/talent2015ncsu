@@ -83,8 +83,6 @@ fn main() {
     let mut population = population_0;
     let mut e = args.flag_energy;
 
-unsafe {
-
     let mut wprod_tmp = Vec::with_capacity(population * 2);
     let mut wprod = vec![1.0; population * 2];
 
@@ -92,7 +90,7 @@ unsafe {
     let mut x = vec![0.0; population * 2];
     for i in 0 .. population {
         let StandardNormal(r) = rng.gen();
-        ix!(x, i) = r / alpha.sqrt();
+        ix_mut!(x, i) = r / alpha.sqrt();
     }
 
     let mut w = Vec::with_capacity(population * 2);
@@ -110,12 +108,12 @@ unsafe {
         for i in 0 .. population {
             // diffuse the position (this is the kinetic energy part)
             let StandardNormal(r) = rng.gen();
-            ix!(old_x, i) += r * sqrt_dt;
+            ix_mut!(old_x, i) += r * sqrt_dt;
 
             // update the weight (this is the potential energy part)
             let v = 0.5 * omega.powi(2) * ix!(old_x, i).powi(2);
-            ix!(w, i) = (-(v - e) * dt).exp();
-            ix!(old_wprod, i) *= ix!(w, i);
+            ix_mut!(w, i) = (-(v - e) * dt).exp();
+            ix_mut!(old_wprod, i) *= ix!(w, i);
         }
 
         // perform branching
@@ -154,12 +152,11 @@ unsafe {
             println!(" 'step_index': {},", step_index);
             println!(" 'time': {},", step_index as f64 * dt);
             println!(" 'average_energy': {},", energy);
+            println!(" 'ref_energy': {},", e);
             println!(" 'population': {},", population);
             println!("}},");
         }
     }
     println!("]");
-
-}
 
 }
