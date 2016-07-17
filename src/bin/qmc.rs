@@ -64,13 +64,13 @@ struct Args {
     flag_population: usize,
 }
 
-struct HO1D {
+pub struct HO1D {
     omega: f64,
 }
 
 // TODO: maybe we should separate the wavefunction dependent part and
 // the wavefunction+hamiltonian dependent parts?
-struct HO1DTrial<'a> {
+pub struct HO1DTrial<'a> {
     system: &'a HO1D,
     alpha: f64,
 }
@@ -189,7 +189,41 @@ impl DMCState {
 
 }
 
-struct DMC {
+pub trait Strategy {
+    fn diffusion_offset(&self, trial: &HO1DTrial, x: f64, dt: f64) -> f64;
+    fn potential_energy(&self, trial: &HO1DTrial, x: f64) -> f64;
+    fn weight_coeff(&self, trial: &HO1DTrial, x: f64) -> f64;
+}
+
+pub struct NormalStrategy;
+
+impl Strategy for NormalStrategy {
+    fn diffusion_offset(&self, _: &HO1DTrial, _: f64, _: f64) -> f64 {
+        0.0
+    }
+    fn potential_energy(&self, trial: &HO1DTrial, x: f64) -> f64 {
+        trial.local_potential_energy(x)
+    }
+    fn weight_coeff(&self, trial: &HO1DTrial, x: f64) -> f64 {
+        trial.eval(x)
+    }
+}
+
+pub struct ImportanceSamplingStrategy;
+
+impl Strategy for ImportanceSamplingStrategy {
+    fn diffusion_offset(&self, trial: &HO1DTrial, x: f64, dt: f64) -> f64 {
+        trial.local_gradient(x) * dt
+    }
+    fn potential_energy(&self, trial: &HO1DTrial, x: f64) -> f64 {
+        trial.local_energy(x)
+    }
+    fn weight_coeff(&self, _: &HO1DTrial, _: f64) -> f64 {
+        1.0
+    }
+}
+
+struct DMC<Strat> {
     state: DMCState,
     new_state: DMCState,
     /// Current weights being calculated
@@ -197,14 +231,18 @@ struct DMC {
     time: f64,
     energy: f64,
     population_goal: usize,
+    strategy: Strat,
 }
 
-impl DMC {
+impl <S: Strategy> DMC<S> {
 
-    fn new<R: Rng, D: IndependentSample<f64>>(rng: &mut R,
-                                              distribution: &D,
-                                              population: usize,
-                                              energy: f64) -> DMC {
+    fn new<R, D>(rng: &mut R,
+                 distribution: &D,
+                 population: usize,
+                 energy: f64,
+                 strategy: S) -> Self
+        where R: Rng,
+              D: IndependentSample<f64> {
         let initial_capacity = (population as f64 * 1.4) as usize;
         DMC {
             state: DMCState::new(rng, distribution, population,
@@ -214,6 +252,7 @@ impl DMC {
             time: 0.0,
             energy: energy,
             population_goal: population,
+            strategy: strategy,
         }
     }
 
@@ -223,7 +262,7 @@ impl DMC {
 
     fn diffuse<R: Rng>(&mut self,
                        rng: &mut R,
-                       system: &HO1D,
+                       trial_wavfun: &HO1DTrial,
                        num_steps: u64,
                        time_step: f64) {
         let sqrt_time_step = time_step.sqrt();
@@ -240,12 +279,17 @@ impl DMC {
 
                 // diffuse the position (this is the kinetic energy part)
                 let StandardNormal(r) = rng.gen();
-                let new_x = ix!(state.x_positions, i) + r * sqrt_time_step;
+                let x = ix!(state.x_positions, i);
+                let new_x =
+                    x
+                    + self.strategy.diffusion_offset(
+                        trial_wavfun, x, time_step)
+                    + r * sqrt_time_step;
                 ix_mut!(state.x_positions, i) = new_x;
 
                 // update the weight (this is the potential energy part)
-                let w = (-time_step * (system.potential_energy(new_x)
-                                       - self.energy)).exp();
+                let v = self.strategy.potential_energy(trial_wavfun, new_x);
+                let w = (-time_step * (v - self.energy)).exp();
                 ix_mut!(self.weights, i) = w;
                 ix_mut!(state.weight_products, i) *= w;
             }
@@ -281,7 +325,9 @@ impl DMC {
         let mut denominator = 0.0;
         for i in 0 .. self.state.len() {
             let x = ix!(self.state.x_positions, i);
-            let u = ix!(self.state.weight_products, i) * trial_wavfun.eval(x);
+            let u =
+                ix!(self.state.weight_products, i)
+                * self.strategy.weight_coeff(trial_wavfun, x);
             e_numerator += u * trial_wavfun.local_energy(x);
             denominator += u;
         }
@@ -292,23 +338,24 @@ impl DMC {
 
 const INITIAL_DIFFUSE: bool = false;
 
-fn dmc<R: Rng>(rng: &mut R,
-               num_steps: u64,
-               initial_population: usize,
-               dt: f64,
-               energy: f64,
-               trial_wavfun: &HO1DTrial,
-               print_interval: u64,
-               branch_interval: u64) {
-    let sys = trial_wavfun.system;
+fn dmc<R: Rng, S: Strategy>(rng: &mut R,
+                            num_steps: u64,
+                            initial_population: usize,
+                            dt: f64,
+                            energy: f64,
+                            trial_wavfun: &HO1DTrial,
+                            print_interval: u64,
+                            branch_interval: u64,
+                            strategy: S) {
     let branches_per_print = print_interval / branch_interval;
     let num_prints = num_steps / (branches_per_print * branch_interval);
 
-    let mut dmc = DMC::new(rng, trial_wavfun, initial_population, energy);
+    let mut dmc = DMC::new(rng, trial_wavfun,
+                           initial_population, energy, strategy);
     println!("[");
 
     if INITIAL_DIFFUSE {
-        dmc.diffuse(rng, sys, 1, dt);
+        dmc.diffuse(rng, trial_wavfun, 1, dt);
         dmc.branch(rng);
 
         let average_energy = dmc.stats(trial_wavfun);
@@ -324,7 +371,7 @@ fn dmc<R: Rng>(rng: &mut R,
     for i in 0 .. num_prints {
 
         for _ in 0 .. branches_per_print {
-            dmc.diffuse(rng, sys, branch_interval, dt);
+            dmc.diffuse(rng, trial_wavfun, branch_interval, dt);
             dmc.branch(rng);
         }
 
@@ -398,6 +445,7 @@ fn main() {
         args.flag_energy,
         &trial_wavfun,
         args.flag_print_interval,
-        args.flag_branch_interval);
+        args.flag_branch_interval,
+        NormalStrategy);
 
 }
