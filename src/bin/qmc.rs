@@ -290,6 +290,8 @@ impl DMC {
 
 }
 
+const INITIAL_DIFFUSE: bool = false;
+
 fn dmc<R: Rng>(rng: &mut R,
                num_steps: u64,
                initial_population: usize,
@@ -303,20 +305,22 @@ fn dmc<R: Rng>(rng: &mut R,
     let num_prints = num_steps / (branches_per_print * branch_interval);
 
     let mut dmc = DMC::new(rng, trial_wavfun, initial_population, energy);
-
-    dmc.diffuse(rng, sys, 1, dt);
-    dmc.branch(rng);
-
-    let average_energy = dmc.stats(trial_wavfun);
-    println!("{{");
-    println!(" 'step_index': {},", 0);
-    println!(" 'time': {},", dmc.time - dt);
-    println!(" 'average_energy': {},", average_energy);
-    println!(" 'ref_energy': {},", dmc.energy);
-    println!(" 'population': {},", dmc.population());
-    println!("}},");
-
     println!("[");
+
+    if INITIAL_DIFFUSE {
+        dmc.diffuse(rng, sys, 1, dt);
+        dmc.branch(rng);
+
+        let average_energy = dmc.stats(trial_wavfun);
+        println!("{{");
+        println!(" 'step_index': {},", 0);
+        println!(" 'time': {},", dmc.time - dt);
+        println!(" 'average_energy': {},", average_energy);
+        println!(" 'ref_energy': {},", dmc.energy);
+        println!(" 'population': {},", dmc.population());
+        println!("}},");
+    }
+
     for i in 0 .. num_prints {
 
         for _ in 0 .. branches_per_print {
