@@ -9,59 +9,23 @@ use rand::distributions::{Sample, IndependentSample};
 use rand::distributions::normal::StandardNormal;
 use qmc::utils::*;
 
-const USAGE: &'static str = "
-Usage:
-  qmc2 [options]
+pub trait WaveFunction {
 
-Options:
+    /// Calculate `psi(x)`.
+    fn eval(&self, x: f64) -> f64;
 
-  -h --help
-    Show this screen.
+    /// Calculate `(T psi)(x) / psi(x)`.
+    fn local_kinetic_energy(&self, x: f64) -> f64;
 
-  -s --seed=<seed>
-    Seed for the random number generator in LE hexadecimal.
-    [default is empty string]
+    /// Calculate `(V psi)(x) / psi(x)`.
+    fn local_potential_energy(&self, x: f64) -> f64;
 
-  --num-steps=<num-steps>
-    [default: 10000]
+    /// Calculate `(H psi)(x) / psi(x)`.
+    fn local_energy(&self, x: f64) -> f64;
 
-  --alpha=<alpha>
-    [default: 1.4]
+    /// Calculate `(del psi)(x) / psi(x)`.
+    fn local_gradient(&self, x: f64) -> f64;
 
-  --omega=<omega>
-    [default: 1.0]
-
-  --energy=<energy>
-    [default: 0.6]
-
-  --dt=<dt>
-    [default: 0.001]
-
-  --branch-interval=<branch-interval>
-    [default: 10]
-
-  --print-interval=<print-interval>
-    [default: 1000]
-
-  --num-steps=<num-steps>
-    [default: 10000]
-
-  --population=<population>
-    [default: 10000]
-
-";
-
-#[derive(Debug, RustcDecodable)]
-struct Args {
-    flag_seed: RandomSeed,
-    flag_num_steps: u64,
-    flag_alpha: f64,
-    flag_omega: f64,
-    flag_dt: f64,
-    flag_energy: f64,
-    flag_print_interval: u64,
-    flag_branch_interval: u64,
-    flag_population: usize,
 }
 
 pub struct HO1D {
@@ -84,29 +48,24 @@ impl HO1D {
 
 }
 
-impl <'a> HO1DTrial<'a> {
+impl <'a> WaveFunction for HO1DTrial<'a> {
 
-    /// Calculate `psi(x)`.
     fn eval(&self, x: f64) -> f64 {
         (-0.5 * self.alpha * x.powi(2)).exp()
     }
 
-    /// Calculate `(T psi)(x) / psi(x)`.
     fn local_kinetic_energy(&self, x: f64) -> f64 {
         -0.5 * ((self.alpha * x).powi(2) - self.alpha)
     }
 
-    /// Calculate `(V psi)(x) / psi(x)`.
     fn local_potential_energy(&self, x: f64) -> f64 {
         self.system.potential_energy(x)
     }
 
-    /// Calculate `(H psi)(x) / psi(x)`.
     fn local_energy(&self, x: f64) -> f64 {
         self.local_kinetic_energy(x) + self.local_potential_energy(x)
     }
 
-    /// Calculate `(del psi)(x) / psi(x)`.
     fn local_gradient(&self, x: f64) -> f64 {
         -self.alpha * x
     }
@@ -190,21 +149,27 @@ impl DMCState {
 }
 
 pub trait Strategy {
-    fn diffusion_offset(&self, trial: &HO1DTrial, x: f64, dt: f64) -> f64;
-    fn potential_energy(&self, trial: &HO1DTrial, x: f64) -> f64;
-    fn weight_coeff(&self, trial: &HO1DTrial, x: f64) -> f64;
+    fn diffusion_offset<F>(&self, trial: &F, x: f64, dt: f64) -> f64
+        where F: WaveFunction;
+    fn potential_energy<F>(&self, trial: &F, x: f64) -> f64
+        where F: WaveFunction;
+    fn weight_coeff<F>(&self, trial: &F, x: f64) -> f64
+        where F: WaveFunction;
 }
 
 pub struct NormalStrategy;
 
 impl Strategy for NormalStrategy {
-    fn diffusion_offset(&self, _: &HO1DTrial, _: f64, _: f64) -> f64 {
+    fn diffusion_offset<F>(&self, _: &F, _: f64, _: f64) -> f64
+        where F: WaveFunction {
         0.0
     }
-    fn potential_energy(&self, trial: &HO1DTrial, x: f64) -> f64 {
+    fn potential_energy<F>(&self, trial: &F, x: f64) -> f64
+        where F: WaveFunction {
         trial.local_potential_energy(x)
     }
-    fn weight_coeff(&self, trial: &HO1DTrial, x: f64) -> f64 {
+    fn weight_coeff<F>(&self, trial: &F, x: f64) -> f64
+        where F: WaveFunction {
         trial.eval(x)
     }
 }
@@ -212,13 +177,16 @@ impl Strategy for NormalStrategy {
 pub struct ImportanceSamplingStrategy;
 
 impl Strategy for ImportanceSamplingStrategy {
-    fn diffusion_offset(&self, trial: &HO1DTrial, x: f64, dt: f64) -> f64 {
+    fn diffusion_offset<F>(&self, trial: &F, x: f64, dt: f64) -> f64
+        where F: WaveFunction {
         trial.local_gradient(x) * dt
     }
-    fn potential_energy(&self, trial: &HO1DTrial, x: f64) -> f64 {
+    fn potential_energy<F>(&self, trial: &F, x: f64) -> f64
+        where F: WaveFunction {
         trial.local_energy(x)
     }
-    fn weight_coeff(&self, _: &HO1DTrial, _: f64) -> f64 {
+    fn weight_coeff<F>(&self, _: &F, _: f64) -> f64
+        where F: WaveFunction {
         1.0
     }
 }
@@ -260,11 +228,13 @@ impl <S: Strategy> DMC<S> {
         self.state.len()
     }
 
-    fn diffuse<R: Rng>(&mut self,
-                       rng: &mut R,
-                       trial_wavfun: &HO1DTrial,
-                       num_steps: u64,
-                       time_step: f64) {
+    fn diffuse<R, F>(&mut self,
+                     rng: &mut R,
+                     trial_wavfun: &F,
+                     num_steps: u64,
+                     time_step: f64)
+        where R: Rng,
+              F: WaveFunction {
         let sqrt_time_step = time_step.sqrt();
         let population = self.state.len();
 
@@ -320,7 +290,7 @@ impl <S: Strategy> DMC<S> {
             };
     }
 
-    fn stats(&self, trial_wavfun: &HO1DTrial) -> f64 {
+    fn stats<F: WaveFunction>(&self, trial_wavfun: &F) -> f64 {
         let mut e_numerator = 0.0;
         let mut denominator = 0.0;
         for i in 0 .. self.state.len() {
@@ -338,15 +308,18 @@ impl <S: Strategy> DMC<S> {
 
 const INITIAL_DIFFUSE: bool = false;
 
-fn dmc<R: Rng, S: Strategy>(rng: &mut R,
-                            num_steps: u64,
-                            initial_population: usize,
-                            dt: f64,
-                            energy: f64,
-                            trial_wavfun: &HO1DTrial,
-                            print_interval: u64,
-                            branch_interval: u64,
-                            strategy: S) {
+fn dmc<R, S, F>(rng: &mut R,
+                num_steps: u64,
+                initial_population: usize,
+                dt: f64,
+                energy: f64,
+                trial_wavfun: &F,
+                print_interval: u64,
+                branch_interval: u64,
+                strategy: S)
+    where R: Rng,
+          S: Strategy,
+          F: IndependentSample<f64> + WaveFunction {
     let branches_per_print = print_interval / branch_interval;
     let num_prints = num_steps / (branches_per_print * branch_interval);
 
@@ -387,6 +360,61 @@ fn dmc<R: Rng, S: Strategy>(rng: &mut R,
 
     }
     println!("]");
+}
+
+const USAGE: &'static str = "
+Usage:
+  qmc2 [options]
+
+Options:
+
+  -h --help
+    Show this screen.
+
+  -s --seed=<seed>
+    Seed for the random number generator in LE hexadecimal.
+    [default is empty string]
+
+  --num-steps=<num-steps>
+    [default: 10000]
+
+  --alpha=<alpha>
+    [default: 1.4]
+
+  --omega=<omega>
+    [default: 1.0]
+
+  --energy=<energy>
+    [default: 0.6]
+
+  --dt=<dt>
+    [default: 0.001]
+
+  --branch-interval=<branch-interval>
+    [default: 10]
+
+  --print-interval=<print-interval>
+    [default: 1000]
+
+  --num-steps=<num-steps>
+    [default: 10000]
+
+  --population=<population>
+    [default: 10000]
+
+";
+
+#[derive(Debug, RustcDecodable)]
+struct Args {
+    flag_seed: RandomSeed,
+    flag_num_steps: u64,
+    flag_alpha: f64,
+    flag_omega: f64,
+    flag_dt: f64,
+    flag_energy: f64,
+    flag_print_interval: u64,
+    flag_branch_interval: u64,
+    flag_population: usize,
 }
 
 fn main() {
