@@ -138,10 +138,11 @@ impl DMCState {
                            source: &DMCState,
                            weights: &[f64]) {
         for i in 0 .. source.len() {
-            let num_clones = (ix!(weights, i) + rng.next_f64()) as i64;
+            let num_clones =
+                (ix!(source.weight_products, i) + rng.next_f64()) as i64;
             for _ in 0 .. num_clones {
                 self.x_positions.push(ix!(source.x_positions, i));
-                self.weight_products.push(ix!(source.weight_products, i));
+                self.weight_products.push(1.0);
             }
         }
     }
