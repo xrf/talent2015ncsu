@@ -3,6 +3,7 @@ import base64, os
 import numpy as np
 import numpy.random as npr
 import matplotlib.pyplot as plt
+from numpy import sqrt
 from utils import *
 
 seed = base64.b16encode(os.urandom(20)).decode("ascii")
@@ -13,5 +14,13 @@ data = run("qmc", **{
     "num_steps": 10000,
     "print_interval": 10,
 })
-plt.plot(data["time"], data["average_energy"])
+fig, ax = plt.subplots()
+err = sqrt((data["avg_sq_energy"] - data["avg_energy"] ** 2)
+           / data["population"])
+ax.fill_between(
+    data["time"],
+    data["avg_energy"] - err,
+    data["avg_energy"] + err,
+    alpha=0.8,
+    linewidth=0)
 plt.show()

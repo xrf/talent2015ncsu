@@ -292,20 +292,62 @@ impl <S: Strategy> DMC<S> {
             };
     }
 
-    fn stats<F: WaveFunction>(&self, trial_wavfun: &F) -> f64 {
-        let mut e_numerator = 0.0;
+    fn stats<F, G>(&self, trial_wavfun: &F, mut f: G) -> f64
+        where F: WaveFunction,
+              G: FnMut(f64, f64) {
         let mut denominator = 0.0;
         for i in 0 .. self.state.len() {
             let x = ix!(self.state.x_positions, i);
             let u =
                 ix!(self.state.weight_products, i)
                 * self.strategy.weight_coeff(trial_wavfun, x);
-            e_numerator += u * trial_wavfun.local_energy(x);
+            f(u, x);
             denominator += u;
         }
-        e_numerator / denominator
+        denominator
     }
 
+    fn all_stats<F: WaveFunction>(&self, trial_wavfun: &F) -> Stats {
+        let mut stats = Stats::new();
+        let denom = self.stats(trial_wavfun, |u, x| {
+            let e = trial_wavfun.local_energy(x);
+            stats.energy += u * e;
+            stats.sq_energy += u * e.powi(2);
+        });
+        &stats / denom
+    }
+
+}
+
+struct Stats {
+    energy: f64,
+    sq_energy: f64,
+}
+
+impl Stats {
+
+    fn new() -> Stats {
+        Stats {
+            energy: 0.0,
+            sq_energy: 0.0,
+        }
+    }
+
+    fn print(&self) {
+        println!(" 'avg_energy': {},", self.energy);
+        println!(" 'avg_sq_energy': {},", self.sq_energy);
+    }
+
+}
+
+impl <'a> std::ops::Div<f64> for &'a Stats  {
+    type Output = Stats;
+    fn div(self, rhs: f64) -> Self::Output {
+        Stats {
+            energy: self.energy / rhs,
+            sq_energy: self.sq_energy / rhs,
+        }
+    }
 }
 
 const INITIAL_DIFFUSE: bool = false;
@@ -334,11 +376,11 @@ fn dmc<R, S, F>(rng: &mut R,
         dmc.branch(rng);
     }
 
-    let average_energy = dmc.stats(trial_wavfun);
+    let stats = dmc.all_stats(trial_wavfun);
     println!("{{");
     println!(" 'step_index': {},", 0);
-    println!(" 'time': {},", dmc.time - dt);
-    println!(" 'average_energy': {},", average_energy);
+    println!(" 'time': {},", dmc.time);
+    stats.print();
     println!(" 'ref_energy': {},", dmc.energy);
     println!(" 'population': {},", dmc.population());
     println!("}},");
@@ -350,12 +392,12 @@ fn dmc<R, S, F>(rng: &mut R,
             dmc.branch(rng);
         }
 
-        let average_energy = dmc.stats(trial_wavfun);
+    let stats = dmc.all_stats(trial_wavfun);
         println!("{{");
         println!(" 'step_index': {},",
                  (i + 1) * branches_per_print * branch_interval);
         println!(" 'time': {},", dmc.time - dt);
-        println!(" 'average_energy': {},", average_energy);
+        stats.print();
         println!(" 'ref_energy': {},", dmc.energy);
         println!(" 'population': {},", dmc.population());
         println!("}},");
