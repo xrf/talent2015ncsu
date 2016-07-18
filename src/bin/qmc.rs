@@ -276,77 +276,48 @@ impl <S: Strategy> DMC<S> {
             };
     }
 
-    fn stats<F, G>(&self, trial_wavfun: &F, mut f: G) -> f64
+    fn stats<F, G>(&self, trial_wavfun: &F, mut update_stats: G)
         where F: WaveFunction,
               G: FnMut(f64, f64) {
-        let mut denominator = 0.0;
         for i in 0 .. self.state.len() {
             let x = ix!(self.state.x_positions, i);
             let u =
                 ix!(self.state.weight_products, i)
                 * self.strategy.weight_coeff(trial_wavfun, x);
-            f(u, x);
-            denominator += u;
+            update_stats(u, x);
         }
-        denominator
-    }
-
-    fn all_stats<F: WaveFunction>(&self, trial_wavfun: &F) -> (Stats, f64) {
-        let mut stats = Stats::new();
-        let denom = self.stats(trial_wavfun, |u, x| {
-            let e = trial_wavfun.local_energy(x);
-            stats.energy += u * e;
-            stats.sq_energy += u * e.powi(2);
-        });
-        (&stats / denom, denom)
     }
 
     fn print_all_stats<F: WaveFunction>(&self,
                                         step_index: u64,
                                         time_step: f64,
                                         trial_wavfun: &F) {
-        let (stats, denom) = self.all_stats(trial_wavfun);
+        let mut denom = 0.0;
+        let mut stats = [0.0; 4];
+        self.stats(trial_wavfun, |u, x| {
+            let e = trial_wavfun.local_energy(x);
+            denom += u;
+            ix_mut!(stats, 0) += u * e;
+            ix_mut!(stats, 1) += u * e.powi(2);
+            ix_mut!(stats, 2) += u * x;
+            ix_mut!(stats, 3) += u * x.powi(2);
+        });
+        for stat in stats.iter_mut() {
+            *stat /= denom;
+        }
         println!("{{");
         println!(" 'step_index': {},", step_index);
         println!(" 'time': {},", step_index as f64 * time_step);
         println!(" 'population': {},", self.population());
         println!(" 'ref_energy': {},", self.energy);
         println!(" 'denominator': {},", denom);
-        stats.print();
+        println!(" 'avg_energy': {},", stats[0]);
+        println!(" 'avg_sq_energy': {},", stats[1]);
+        println!(" 'avg_x': {},", stats[2]);
+        println!(" 'avg_sq_x': {},", stats[3]);
         println!("}},");
     }
 
-}
-
-struct Stats {
-    energy: f64,
-    sq_energy: f64,
-}
-
-impl Stats {
-
-    fn new() -> Stats {
-        Stats {
-            energy: 0.0,
-            sq_energy: 0.0,
-        }
-    }
-
-    fn print(&self) {
-        println!(" 'avg_energy': {},", self.energy);
-        println!(" 'avg_sq_energy': {},", self.sq_energy);
-    }
-
-}
-
-impl <'a> std::ops::Div<f64> for &'a Stats  {
-    type Output = Stats;
-    fn div(self, rhs: f64) -> Self::Output {
-        Stats {
-            energy: self.energy / rhs,
-            sq_energy: self.sq_energy / rhs,
-        }
-    }
 }
 
 fn dmc<R, S, F>(rng: &mut R,
