@@ -291,14 +291,29 @@ impl <S: Strategy> DMC<S> {
         denominator
     }
 
-    fn all_stats<F: WaveFunction>(&self, trial_wavfun: &F) -> Stats {
+    fn all_stats<F: WaveFunction>(&self, trial_wavfun: &F) -> (Stats, f64) {
         let mut stats = Stats::new();
         let denom = self.stats(trial_wavfun, |u, x| {
             let e = trial_wavfun.local_energy(x);
             stats.energy += u * e;
             stats.sq_energy += u * e.powi(2);
         });
-        &stats / denom
+        (&stats / denom, denom)
+    }
+
+    fn print_all_stats<F: WaveFunction>(&self,
+                                        step_index: u64,
+                                        time_step: f64,
+                                        trial_wavfun: &F) {
+        let (stats, denom) = self.all_stats(trial_wavfun);
+        println!("{{");
+        println!(" 'step_index': {},", step_index);
+        println!(" 'time': {},", step_index as f64 * time_step);
+        println!(" 'population': {},", self.population());
+        println!(" 'ref_energy': {},", self.energy);
+        println!(" 'denominator': {},", denom);
+        stats.print();
+        println!("}},");
     }
 
 }
@@ -334,8 +349,6 @@ impl <'a> std::ops::Div<f64> for &'a Stats  {
     }
 }
 
-const INITIAL_DIFFUSE: bool = false;
-
 fn dmc<R, S, F>(rng: &mut R,
                 num_steps: u64,
                 initial_population: usize,
@@ -355,39 +368,16 @@ fn dmc<R, S, F>(rng: &mut R,
                            initial_population, energy, strategy);
     println!("[");
 
-    if INITIAL_DIFFUSE {
-        dmc.step(rng, trial_wavfun, time_step);
-        dmc.branch(rng);
-    }
-
-    let stats = dmc.all_stats(trial_wavfun);
-    println!("{{");
-    println!(" 'step_index': {},", 0);
-    println!(" 'time': {},", 0.0);
-    stats.print();
-    println!(" 'ref_energy': {},", dmc.energy);
-    println!(" 'population': {},", dmc.population());
-    println!("}},");
-
+    dmc.print_all_stats(0, time_step, trial_wavfun);
     for i in 0 .. num_prints {
-
         for _ in 0 .. branches_per_print {
             for _ in 0 .. branch_interval {
                 dmc.step(rng, trial_wavfun, time_step);
             }
             dmc.branch(rng);
         }
-
         let step_index = (i + 1) * branches_per_print * branch_interval;
-        let stats = dmc.all_stats(trial_wavfun);
-        println!("{{");
-        println!(" 'step_index': {},", step_index);
-        println!(" 'time': {},", step_index as f64 * time_step);
-        stats.print();
-        println!(" 'ref_energy': {},", dmc.energy);
-        println!(" 'population': {},", dmc.population());
-        println!("}},");
-
+        dmc.print_all_stats(step_index, time_step, trial_wavfun);
     }
     println!("]");
 }
