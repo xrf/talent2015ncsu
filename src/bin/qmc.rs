@@ -332,16 +332,16 @@ fn dmc<R, S, F>(rng: &mut R,
     if INITIAL_DIFFUSE {
         dmc.diffuse(rng, trial_wavfun, 1, dt);
         dmc.branch(rng);
-
-        let average_energy = dmc.stats(trial_wavfun);
-        println!("{{");
-        println!(" 'step_index': {},", 0);
-        println!(" 'time': {},", dmc.time - dt);
-        println!(" 'average_energy': {},", average_energy);
-        println!(" 'ref_energy': {},", dmc.energy);
-        println!(" 'population': {},", dmc.population());
-        println!("}},");
     }
+
+    let average_energy = dmc.stats(trial_wavfun);
+    println!("{{");
+    println!(" 'step_index': {},", 0);
+    println!(" 'time': {},", dmc.time - dt);
+    println!(" 'average_energy': {},", average_energy);
+    println!(" 'ref_energy': {},", dmc.energy);
+    println!(" 'population': {},", dmc.population());
+    println!("}},");
 
     for i in 0 .. num_prints {
 
