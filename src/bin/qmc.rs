@@ -228,6 +228,7 @@ impl <S: Strategy> DMC<S> {
         self.state.len()
     }
 
+    /// `time_step` is expected to be in units of `<length_unit>^2 m / hbar`.
     fn diffuse<R, F>(&mut self,
                      rng: &mut R,
                      trial_wavfun: &F,
