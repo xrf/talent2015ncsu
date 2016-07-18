@@ -135,8 +135,7 @@ impl DMCState {
 
     fn branch_from<R: Rng>(&mut self,
                            rng: &mut R,
-                           source: &DMCState,
-                           weights: &[f64]) {
+                           source: &DMCState) {
         for i in 0 .. source.len() {
             let num_clones =
                 (ix!(source.weight_products, i) + rng.next_f64()) as i64;
@@ -195,9 +194,6 @@ impl Strategy for ImportanceSamplingStrategy {
 struct DMC<Strat> {
     state: DMCState,
     new_state: DMCState,
-    /// Current weights being calculated
-    weights: Vec<f64>,
-    time: f64,
     energy: f64,
     population_goal: usize,
     strategy: Strat,
@@ -217,8 +213,6 @@ impl <S: Strategy> DMC<S> {
             state: DMCState::new(rng, distribution, population,
                                  initial_capacity),
             new_state: DMCState::with_capacity(initial_capacity),
-            weights: Vec::with_capacity(initial_capacity),
-            time: 0.0,
             energy: energy,
             population_goal: population,
             strategy: strategy,
@@ -230,54 +224,44 @@ impl <S: Strategy> DMC<S> {
     }
 
     /// `time_step` is expected to be in units of `<length_unit>^2 m / hbar`.
-    fn diffuse<R, F>(&mut self,
-                     rng: &mut R,
-                     trial_wavfun: &F,
-                     num_steps: u64,
-                     time_step: f64)
+    fn step<R, F>(&mut self,
+                  rng: &mut R,
+                  trial_wavfun: &F,
+                  time_step: f64)
         where R: Rng,
               F: WaveFunction {
-        let sqrt_time_step = time_step.sqrt();
+
         let population = self.state.len();
 
-        assert!(self.state.valid());
+        // update walkers
+        for i in 0 .. population {
+            let state = &mut self.state;
 
-        for _ in 0 .. num_steps {
+            // diffuse the position (this is the kinetic energy part)
+            let StandardNormal(r) = rng.gen();
+            let x = ix!(state.x_positions, i);
+            let new_x =
+                x
+                + self.strategy.diffusion_offset(
+                    trial_wavfun, x, time_step)
+                + r * time_step.sqrt();
+            ix_mut!(state.x_positions, i) = new_x;
 
-            // update walkers
-            self.weights.resize(population, 0.0);
-            for i in 0 .. population {
-                let state = &mut self.state;
-
-                // diffuse the position (this is the kinetic energy part)
-                let StandardNormal(r) = rng.gen();
-                let x = ix!(state.x_positions, i);
-                let new_x =
-                    x
-                    + self.strategy.diffusion_offset(
-                        trial_wavfun, x, time_step)
-                    + r * sqrt_time_step;
-                ix_mut!(state.x_positions, i) = new_x;
-
-                // update the weight (this is the potential energy part)
-                let v = self.strategy.potential_energy(trial_wavfun, new_x);
-                let w = (-time_step * (v - self.energy)).exp();
-                ix_mut!(self.weights, i) = w;
-                ix_mut!(state.weight_products, i) *= w;
-            }
-
-            self.control_population(0.01);
+            // update the weight (this is the potential energy part)
+            let v = self.strategy.potential_energy(trial_wavfun, new_x);
+            let w = (-time_step * (v - self.energy)).exp();
+            ix_mut!(state.weight_products, i) *= w;
         }
-        self.time += num_steps as f64 * time_step;
+
+        self.control_population(0.01);
     }
 
     fn branch<R: Rng>(&mut self, rng: &mut R) {
         assert!(self.state.valid());
-        assert!(self.state.len() == self.weights.len());
         assert!(self.new_state.len() == 0);
 
         self.control_population(-0.01);
-        self.new_state.branch_from(rng, &self.state, &self.weights);
+        self.new_state.branch_from(rng, &self.state);
         self.state.clear();
         std::mem::swap(&mut self.state, &mut self.new_state);
         self.control_population(0.01);
@@ -355,7 +339,7 @@ const INITIAL_DIFFUSE: bool = false;
 fn dmc<R, S, F>(rng: &mut R,
                 num_steps: u64,
                 initial_population: usize,
-                dt: f64,
+                time_step: f64,
                 energy: f64,
                 trial_wavfun: &F,
                 print_interval: u64,
@@ -372,14 +356,14 @@ fn dmc<R, S, F>(rng: &mut R,
     println!("[");
 
     if INITIAL_DIFFUSE {
-        dmc.diffuse(rng, trial_wavfun, 1, dt);
+        dmc.step(rng, trial_wavfun, time_step);
         dmc.branch(rng);
     }
 
     let stats = dmc.all_stats(trial_wavfun);
     println!("{{");
     println!(" 'step_index': {},", 0);
-    println!(" 'time': {},", dmc.time);
+    println!(" 'time': {},", 0.0);
     stats.print();
     println!(" 'ref_energy': {},", dmc.energy);
     println!(" 'population': {},", dmc.population());
@@ -388,15 +372,17 @@ fn dmc<R, S, F>(rng: &mut R,
     for i in 0 .. num_prints {
 
         for _ in 0 .. branches_per_print {
-            dmc.diffuse(rng, trial_wavfun, branch_interval, dt);
+            for _ in 0 .. branch_interval {
+                dmc.step(rng, trial_wavfun, time_step);
+            }
             dmc.branch(rng);
         }
 
-    let stats = dmc.all_stats(trial_wavfun);
+        let step_index = (i + 1) * branches_per_print * branch_interval;
+        let stats = dmc.all_stats(trial_wavfun);
         println!("{{");
-        println!(" 'step_index': {},",
-                 (i + 1) * branches_per_print * branch_interval);
-        println!(" 'time': {},", dmc.time - dt);
+        println!(" 'step_index': {},", step_index);
+        println!(" 'time': {},", step_index as f64 * time_step);
         stats.print();
         println!(" 'ref_energy': {},", dmc.energy);
         println!(" 'population': {},", dmc.population());
