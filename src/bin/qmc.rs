@@ -23,7 +23,7 @@ pub struct Stats {
 }
 
 impl Default for Stats {
-    fn default() -> Stats {
+    fn default() -> Self {
         Stats {
             weight: 0.0,
             energy: 0.0,
@@ -56,6 +56,9 @@ pub trait WaveFunction {
 
     /// Calculate `psi(x)`.
     fn eval(&self, x: f64) -> f64;
+
+    /// Calculate `|psi(x)|^2`.
+    fn normsq_eval(&self, x: f64) -> f64;
 
     /// Calculate `(T psi)(x) / psi(x)`.
     fn local_kinetic_energy(&self, x: f64) -> f64;
@@ -97,6 +100,10 @@ impl <'a> WaveFunction for HO1DTrial<'a> {
         (-0.5 * self.alpha * x.powi(2)).exp()
     }
 
+    fn normsq_eval(&self, x: f64) -> f64 {
+        self.eval(x).powi(2)
+    }
+
     fn local_kinetic_energy(&self, x: f64) -> f64 {
         -0.5 * ((self.alpha * x).powi(2) - self.alpha)
     }
@@ -132,60 +139,95 @@ impl<'a> IndependentSample<f64> for HO1DTrial<'a> {
 
 }
 
-struct DMCState {
+struct QMCState {
     /// Weight product of the walkers
-    weight_products: Vec<f64>,
+    weights: Vec<f64>,
     /// Position of the walkers
     x_positions: Vec<f64>,
 }
 
-impl DMCState {
+impl QMCState {
 
-    fn new<R, D>(rng: &mut R,
-                 distribution: &D,
-                 population: usize,
-                 initial_capacity: usize) -> DMCState
+    pub fn new<R, D>(rng: &mut R,
+                     distribution: &D,
+                     population: usize) -> QMCState
         where R: Rng,
               D: IndependentSample<f64> {
-        let mut state = DMCState::with_capacity(initial_capacity);
+        QMCState::new_with_capacity(rng, distribution, population, population)
+    }
+
+    pub fn new_with_capacity<R, D>(rng: &mut R,
+                                   distribution: &D,
+                                   population: usize,
+                                   initial_capacity: usize) -> QMCState
+        where R: Rng,
+              D: IndependentSample<f64> {
+        let mut state = QMCState::with_capacity(initial_capacity);
         for _ in 0 .. population {
             state.x_positions.push(distribution.ind_sample(rng));
-            state.weight_products.push(1.0);
+            state.weights.push(1.0);
         }
         state
     }
 
-    fn with_capacity(capacity: usize) -> DMCState {
-        DMCState {
+    pub fn with_capacity(capacity: usize) -> QMCState {
+        QMCState {
             x_positions: Vec::with_capacity(capacity),
-            weight_products: Vec::with_capacity(capacity),
+            weights: Vec::with_capacity(capacity),
         }
     }
 
-    fn valid(&self) -> bool {
-        self.weight_products.len() == self.x_positions.len()
+    pub fn valid(&self) -> bool {
+        self.weights.len() == self.x_positions.len()
     }
 
-    fn len(&self) -> usize {
+    pub fn len(&self) -> usize {
         debug_assert!(self.valid());
-        self.weight_products.len()
+        self.weights.len()
     }
 
-    fn clear(&mut self) {
+    pub fn clear(&mut self) {
         self.x_positions.clear();
-        self.weight_products.clear();
+        self.weights.clear();
     }
 
-    fn branch_from<R: Rng>(&mut self,
-                           rng: &mut R,
-                           source: &DMCState) {
+    pub fn branch_from<R: Rng>(&mut self,
+                               rng: &mut R,
+                               source: &QMCState) {
         for i in 0 .. source.len() {
             let num_clones =
-                (ix!(source.weight_products, i) + rng.next_f64()) as i64;
+                (ix!(source.weights, i) + rng.next_f64()) as i64;
             for _ in 0 .. num_clones {
                 self.x_positions.push(ix!(source.x_positions, i));
-                self.weight_products.push(1.0);
+                self.weights.push(1.0);
             }
+        }
+    }
+
+    pub fn metropolis<R, P>(&mut self,
+                            rng: &mut R,
+                            probability: P,
+                            max_step_size: f64)
+        where R: Rng,
+              P: Fn(f64) -> f64 {
+        for i in 0 .. self.len() {
+            let x = ix!(self.x_positions, i);
+            let p = ix!(self.weights, i);
+            let x_new = x + max_step_size * (rng.next_f64() - 0.5);
+            let p_new = probability(x_new);
+            if rng.next_f64() * p < p_new {
+                ix_mut!(self.x_positions, i) = x_new;
+                ix_mut!(self.weights, i) = p_new;
+            }
+        }
+    }
+
+    pub fn stats<F>(&self, mut update_stats: F)
+        where F: FnMut(f64, f64) {
+        for i in 0 .. self.len() {
+            let x = ix!(self.x_positions, i);
+            let u = ix!(self.weights, i);
+            update_stats(u, x);
         }
     }
 
@@ -237,9 +279,36 @@ impl Strategy for ImportanceSamplingStrategy {
     }
 }
 
+fn vmc<R, W, D>(rng: &mut R,
+                num_steps: u64,
+                steps_per_bin: u64,
+                population: usize,
+                trial_wavfun: &W,
+                initial_distribution: &D,
+                max_step_size: f64)
+    where R: Rng,
+          W: WaveFunction,
+          D: IndependentSample<f64> {
+    let num_bins = num_steps / steps_per_bin;
+    let mut vmc = QMCState::new(rng, initial_distribution, population);
+    println!("[");
+    for i in 0 .. num_bins {
+        let mut stats: Stats = Default::default();
+        for _ in 0 .. steps_per_bin {
+            vmc.metropolis(rng,
+                           |x| trial_wavfun.normsq_eval(x),
+                           max_step_size);
+            vmc.stats(|u, x| stats.update(trial_wavfun, u, x));
+        }
+        stats.calc_average();
+        println!("{}", rustc_serialize::json::encode(&stats).unwrap());
+    }
+    println!("]");
+}
+
 struct DMC<Strat> {
-    state: DMCState,
-    new_state: DMCState,
+    state: QMCState,
+    new_state: QMCState,
     trial_energy: f64,
     overcorrection: f64,
     // Note that we store the growth_energy directly instead of total weight
@@ -263,9 +332,9 @@ impl <S: Strategy> DMC<S> {
               D: IndependentSample<f64> {
         let initial_capacity = (population as f64 * 1.4) as usize;
         DMC {
-            state: DMCState::new(rng, distribution, population,
-                                 initial_capacity),
-            new_state: DMCState::with_capacity(initial_capacity),
+            state: QMCState::new_with_capacity(rng, distribution, population,
+                                               initial_capacity),
+            new_state: QMCState::with_capacity(initial_capacity),
             trial_energy: trial_energy,
             overcorrection: overcorrection,
             growth_energy: trial_energy,
@@ -308,7 +377,7 @@ impl <S: Strategy> DMC<S> {
             // update the weight (this is the potential energy part)
             let v = self.strategy.potential_energy(trial_wavfun, new_x);
             let w = (time_step * (self.trial_energy - v)).exp();
-            ix_mut!(state.weight_products, i) *= w;
+            ix_mut!(state.weights, i) *= w;
             weight_sum += w;
             weight_product_sum += w;
         }
@@ -346,13 +415,9 @@ impl <S: Strategy> DMC<S> {
     fn stats<W, F>(&self, trial_wavfun: &W, mut update_stats: F)
         where W: WaveFunction,
               F: FnMut(f64, f64) {
-        for i in 0 .. self.state.len() {
-            let x = ix!(self.state.x_positions, i);
-            let u =
-                ix!(self.state.weight_products, i)
-                * self.strategy.weight_coeff(trial_wavfun, x);
-            update_stats(u, x);
-        }
+        self.state.stats(|u, x| {
+            update_stats(u * self.strategy.weight_coeff(trial_wavfun, x), x)
+        });
     }
 
     fn print_all_stats<W>(&self,
@@ -376,19 +441,19 @@ impl <S: Strategy> DMC<S> {
 
 }
 
-fn dmc<R, S, F>(rng: &mut R,
+fn dmc<R, S, W>(rng: &mut R,
                 num_steps: u64,
                 initial_population: usize,
                 time_step: f64,
                 trial_energy: f64,
-                trial_wavfun: &F,
+                trial_wavfun: &W,
                 overcorrection: f64,
                 print_interval: u64,
                 branch_interval: u64,
                 strategy: S)
     where R: Rng,
           S: Strategy,
-          F: IndependentSample<f64> + WaveFunction {
+          W: IndependentSample<f64> + WaveFunction {
     let branches_per_print = print_interval / branch_interval;
     let num_prints = num_steps / (branches_per_print * branch_interval);
 
@@ -487,11 +552,11 @@ fn main() {
 //     {
 //         let delta = 0.1;
 //         // vmc
-//         let mut walkers = VMCState {
+//         let mut walkers = QMCState {
 //             x: vec![0.0; population],
 //             w: vec![0.0; population],
 //         };
-//         let mut new_walkers = VMCState {
+//         let mut new_walkers = QMCState {
 //             x: vec![0.0; population],
 //             w: vec![0.0; population],
 //         };
