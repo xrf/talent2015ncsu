@@ -3,6 +3,7 @@ import base64, os
 import numpy as np
 import numpy.random as npr
 import matplotlib.pyplot as plt
+import pandas as pd
 from numpy import sqrt
 from utils import *
 
@@ -17,6 +18,8 @@ data = run("qmc", **{
     "branch_interval": 10,
 })
 fig, ax = plt.subplots()
+data = [flatten_dict(x) for x in data["dmc"]]
+data = pd.DataFrame.from_records(data)
 err = sqrt((data["stats.sq_energy"] - data["stats.energy"] ** 2)
            / data["stats.weight"])
 ax.fill_between(

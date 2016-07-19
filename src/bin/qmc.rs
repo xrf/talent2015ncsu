@@ -285,7 +285,7 @@ fn vmc<R, W, D>(rng: &mut R,
                 population: usize,
                 trial_wavfun: &W,
                 initial_distribution: &D,
-                max_step_size: f64)
+                max_step_size: f64) -> QMCState
     where R: Rng,
           W: WaveFunction,
           D: IndependentSample<f64> {
@@ -301,9 +301,10 @@ fn vmc<R, W, D>(rng: &mut R,
             vmc.stats(|u, x| stats.update(trial_wavfun, u, x));
         }
         stats.calc_average();
-        println!("{}", rustc_serialize::json::encode(&stats).unwrap());
+        println!("{},", rustc_serialize::json::encode(&stats).unwrap());
     }
-    println!("]");
+    println!("],");
+    vmc
 }
 
 struct DMC<Strat> {
@@ -472,7 +473,7 @@ fn dmc<R, S, W>(rng: &mut R,
         let step_index = (i + 1) * branches_per_print * branch_interval;
         dmc.print_all_stats(step_index, time_step, trial_wavfun);
     }
-    println!("]");
+    println!("],");
 }
 
 const USAGE: &'static str = "
@@ -549,11 +550,32 @@ fn main() {
     let sys = HO1D { omega: args.flag_omega };
     let trial_wavfun = HO1DTrial { system: &sys, alpha: args.flag_alpha };
 
-    let mut state = Vec::with_capacity(args.flag_population);
-    for _ in 0 .. args.flag_population {
-        state.push(trial_wavfun.ind_sample(&mut rng));
-    }
+    use rand::distributions::range::Range;
 
+    const NO_VMC: bool = false;
+
+    println!("{{");
+
+    let state =
+        if NO_VMC {
+            let mut state = Vec::with_capacity(args.flag_population);
+            let range = Range::new(-1.0, 1.0);
+            for _ in 0 .. args.flag_population {
+                state.push(range.ind_sample(&mut rng));
+            }
+            state
+        } else {
+            println!("'vmc':");
+            vmc(&mut rng,
+                args.flag_num_steps,
+                100,
+                100,
+                &trial_wavfun,
+                &Range::new(-1.0, 1.0),
+                0.2).x_positions
+        };
+
+    println!("'dmc':");
     dmc(&mut rng,
         args.flag_num_steps,
         &state,
@@ -565,4 +587,5 @@ fn main() {
         args.flag_branch_interval,
         NormalStrategy);
 
+    println!("}}");
 }
