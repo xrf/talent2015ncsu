@@ -13,6 +13,8 @@ data = run("qmc", **{
     "population": 10000,
     "num_steps": 10000,
     "print_interval": 10,
+    "dt": 0.001,
+    "branch_interval": 10,
 })
 fig, ax = plt.subplots()
 err = sqrt((data["avg_sq_energy"] - data["avg_energy"] ** 2)

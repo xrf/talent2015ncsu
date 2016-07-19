@@ -119,7 +119,7 @@ impl DMCState {
         }
     }
 
-    fn valid(&self) -> bool{
+    fn valid(&self) -> bool {
         self.weight_products.len() == self.x_positions.len()
     }
 
@@ -151,6 +151,9 @@ impl DMCState {
 pub trait Strategy {
     fn diffusion_offset<F>(&self, trial: &F, x: f64, dt: f64) -> f64
         where F: WaveFunction;
+
+    /// Despite the name, this part isn't necessarily the potential energy.
+    /// This term controls the weight calculation.
     fn potential_energy<F>(&self, trial: &F, x: f64) -> f64
         where F: WaveFunction;
     fn weight_coeff<F>(&self, trial: &F, x: f64) -> f64
@@ -194,7 +197,7 @@ impl Strategy for ImportanceSamplingStrategy {
 struct DMC<Strat> {
     state: DMCState,
     new_state: DMCState,
-    energy: f64,
+    trial_energy: f64,
     population_goal: usize,
     strategy: Strat,
     // Note that we store the average weight instead of total weight
@@ -207,7 +210,7 @@ impl <S: Strategy> DMC<S> {
     fn new<R, D>(rng: &mut R,
                  distribution: &D,
                  population: usize,
-                 energy: f64,
+                 trial_energy: f64,
                  strategy: S) -> Self
         where R: Rng,
               D: IndependentSample<f64> {
@@ -216,7 +219,7 @@ impl <S: Strategy> DMC<S> {
             state: DMCState::new(rng, distribution, population,
                                  initial_capacity),
             new_state: DMCState::with_capacity(initial_capacity),
-            energy: energy,
+            trial_energy: trial_energy,
             population_goal: population,
             strategy: strategy,
             avg_weight: 1.0,
@@ -228,14 +231,14 @@ impl <S: Strategy> DMC<S> {
     }
 
     /// `time_step` is expected to be in units of `<length_unit>^2 m / hbar`.
-    fn step<R, F>(&mut self,
+    fn step<R, W>(&mut self,
                   rng: &mut R,
-                  trial_wavfun: &F,
+                  trial_wavfun: &W,
                   time_step: f64)
         where R: Rng,
-              F: WaveFunction {
+              W: WaveFunction {
 
-        let population = self.state.len();
+        let population = self.population();
 
         // update walkers
         let mut weight_sum = 0.0;
@@ -254,7 +257,7 @@ impl <S: Strategy> DMC<S> {
 
             // update the weight (this is the potential energy part)
             let v = self.strategy.potential_energy(trial_wavfun, new_x);
-            let w = (-time_step * (v - self.energy)).exp();
+            let w = (-time_step * (v - self.trial_energy)).exp();
             weight_sum += w;
             ix_mut!(state.weight_products, i) *= w;
         }
@@ -275,7 +278,7 @@ impl <S: Strategy> DMC<S> {
     }
 
     fn control_population(&mut self, increment: f64) {
-        self.energy +=
+        self.trial_energy +=
             if self.population() <= self.population_goal {
                 increment
             } else {
@@ -283,9 +286,9 @@ impl <S: Strategy> DMC<S> {
             };
     }
 
-    fn stats<F, G>(&self, trial_wavfun: &F, mut update_stats: G)
-        where F: WaveFunction,
-              G: FnMut(f64, f64) {
+    fn stats<W, F>(&self, trial_wavfun: &W, mut update_stats: F)
+        where W: WaveFunction,
+              F: FnMut(f64, f64) {
         for i in 0 .. self.state.len() {
             let x = ix!(self.state.x_positions, i);
             let u =
@@ -295,10 +298,11 @@ impl <S: Strategy> DMC<S> {
         }
     }
 
-    fn print_all_stats<F: WaveFunction>(&self,
-                                        step_index: u64,
-                                        time_step: f64,
-                                        trial_wavfun: &F) {
+    fn print_all_stats<W>(&self,
+                          step_index: u64,
+                          time_step: f64,
+                          trial_wavfun: &W)
+        where W: WaveFunction {
         let mut denom = 0.0;
         let mut stats = [0.0; 4];
         self.stats(trial_wavfun, |u, x| {
@@ -312,12 +316,12 @@ impl <S: Strategy> DMC<S> {
         for stat in stats.iter_mut() {
             *stat /= denom;
         }
-        let growth_energy = self.energy - self.avg_weight.ln() / time_step;
+        let growth_energy = self.trial_energy - self.avg_weight.ln() / time_step;
         println!("{{");
         println!(" 'step_index': {},", step_index);
         println!(" 'time': {},", step_index as f64 * time_step);
         println!(" 'population': {},", self.population());
-        println!(" 'ref_energy': {},", self.energy);
+        println!(" 'trial_energy': {},", self.trial_energy);
         println!(" 'growth_energy': {},", growth_energy);
         println!(" 'denominator': {},", denom);
         println!(" 'avg_energy': {},", stats[0]);
@@ -333,7 +337,7 @@ fn dmc<R, S, F>(rng: &mut R,
                 num_steps: u64,
                 initial_population: usize,
                 time_step: f64,
-                energy: f64,
+                trial_energy: f64,
                 trial_wavfun: &F,
                 print_interval: u64,
                 branch_interval: u64,
@@ -345,7 +349,7 @@ fn dmc<R, S, F>(rng: &mut R,
     let num_prints = num_steps / (branches_per_print * branch_interval);
 
     let mut dmc = DMC::new(rng, trial_wavfun,
-                           initial_population, energy, strategy);
+                           initial_population, trial_energy, strategy);
     println!("[");
 
     dmc.print_all_stats(0, time_step, trial_wavfun);
@@ -384,7 +388,8 @@ Options:
   --omega=<omega>
     [default: 1.0]
 
-  --energy=<energy>
+  --trial-energy=<trial-energy>
+    Initial trial energy.
     [default: 0.6]
 
   --dt=<dt>
@@ -400,6 +405,7 @@ Options:
     [default: 10000]
 
   --population=<population>
+    Desired walker population.  Actual population may vary slightly.
     [default: 10000]
 
 ";
@@ -411,7 +417,7 @@ struct Args {
     flag_alpha: f64,
     flag_omega: f64,
     flag_dt: f64,
-    flag_energy: f64,
+    flag_trial_energy: f64,
     flag_print_interval: u64,
     flag_branch_interval: u64,
     flag_population: usize,
@@ -470,7 +476,7 @@ fn main() {
         args.flag_num_steps,
         args.flag_population,
         args.flag_dt,
-        args.flag_energy,
+        args.flag_trial_energy,
         &trial_wavfun,
         args.flag_print_interval,
         args.flag_branch_interval,
