@@ -292,7 +292,7 @@ fn vmc<R, W, D>(rng: &mut R,
     let num_bins = num_steps / steps_per_bin;
     let mut vmc = QMCState::new(rng, initial_distribution, population);
     println!("[");
-    for i in 0 .. num_bins {
+    for _ in 0 .. num_bins {
         let mut stats: Stats = Default::default();
         for _ in 0 .. steps_per_bin {
             vmc.metropolis(rng,
@@ -322,18 +322,19 @@ struct DMC<Strat> {
 
 impl <S: Strategy> DMC<S> {
 
-    fn new<R, D>(rng: &mut R,
-                 distribution: &D,
-                 population: usize,
-                 trial_energy: f64,
-                 overcorrection: f64,
-                 strategy: S) -> Self
-        where R: Rng,
-              D: IndependentSample<f64> {
+    fn new(state: &[f64],
+           trial_energy: f64,
+           overcorrection: f64,
+           strategy: S) -> Self {
+        let population = state.len();
         let initial_capacity = (population as f64 * 1.4) as usize;
+        let mut qmc_state = QMCState::with_capacity(initial_capacity);
+        for x in state.iter() {
+            qmc_state.x_positions.push(*x);
+            qmc_state.weights.push(1.0);
+        }
         DMC {
-            state: QMCState::new_with_capacity(rng, distribution, population,
-                                               initial_capacity),
+            state: qmc_state,
             new_state: QMCState::with_capacity(initial_capacity),
             trial_energy: trial_energy,
             overcorrection: overcorrection,
@@ -443,7 +444,7 @@ impl <S: Strategy> DMC<S> {
 
 fn dmc<R, S, W>(rng: &mut R,
                 num_steps: u64,
-                initial_population: usize,
+                state: &[f64],
                 time_step: f64,
                 trial_energy: f64,
                 trial_wavfun: &W,
@@ -457,8 +458,7 @@ fn dmc<R, S, W>(rng: &mut R,
     let branches_per_print = print_interval / branch_interval;
     let num_prints = num_steps / (branches_per_print * branch_interval);
 
-    let mut dmc = DMC::new(rng, trial_wavfun,
-                           initial_population, trial_energy, overcorrection, strategy);
+    let mut dmc = DMC::new(state, trial_energy, overcorrection, strategy);
     println!("[");
 
     dmc.print_all_stats(0, time_step, trial_wavfun);
@@ -549,9 +549,14 @@ fn main() {
     let sys = HO1D { omega: args.flag_omega };
     let trial_wavfun = HO1DTrial { system: &sys, alpha: args.flag_alpha };
 
+    let mut state = Vec::with_capacity(args.flag_population);
+    for _ in 0 .. args.flag_population {
+        state.push(trial_wavfun.ind_sample(&mut rng));
+    }
+
     dmc(&mut rng,
         args.flag_num_steps,
-        args.flag_population,
+        &state,
         args.flag_dt,
         args.flag_trial_energy,
         &trial_wavfun,
