@@ -23,4 +23,9 @@ ax.fill_between(
     data["avg_energy"] + err,
     alpha=0.8,
     linewidth=0)
+ax.plot(
+    data["time"],
+    data["growth_energy"],
+    alpha=0.8,
+    color="red")
 plt.show()

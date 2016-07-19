@@ -197,6 +197,9 @@ struct DMC<Strat> {
     energy: f64,
     population_goal: usize,
     strategy: Strat,
+    // Note that we store the average weight instead of total weight
+    // because the population might've changed since then
+    avg_weight: f64,
 }
 
 impl <S: Strategy> DMC<S> {
@@ -216,6 +219,7 @@ impl <S: Strategy> DMC<S> {
             energy: energy,
             population_goal: population,
             strategy: strategy,
+            avg_weight: 1.0,
         }
     }
 
@@ -234,6 +238,7 @@ impl <S: Strategy> DMC<S> {
         let population = self.state.len();
 
         // update walkers
+        let mut weight_sum = 0.0;
         for i in 0 .. population {
             let state = &mut self.state;
 
@@ -250,9 +255,11 @@ impl <S: Strategy> DMC<S> {
             // update the weight (this is the potential energy part)
             let v = self.strategy.potential_energy(trial_wavfun, new_x);
             let w = (-time_step * (v - self.energy)).exp();
+            weight_sum += w;
             ix_mut!(state.weight_products, i) *= w;
         }
 
+        self.avg_weight = weight_sum / self.population() as f64;
         self.control_population(0.01);
     }
 
@@ -305,11 +312,13 @@ impl <S: Strategy> DMC<S> {
         for stat in stats.iter_mut() {
             *stat /= denom;
         }
+        let growth_energy = self.energy - self.avg_weight.ln() / time_step;
         println!("{{");
         println!(" 'step_index': {},", step_index);
         println!(" 'time': {},", step_index as f64 * time_step);
         println!(" 'population': {},", self.population());
         println!(" 'ref_energy': {},", self.energy);
+        println!(" 'growth_energy': {},", growth_energy);
         println!(" 'denominator': {},", denom);
         println!(" 'avg_energy': {},", stats[0]);
         println!(" 'avg_sq_energy': {},", stats[1]);
