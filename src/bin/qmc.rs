@@ -203,6 +203,7 @@ struct DMC<Strat> {
     // or average weight because the population / trial_energy might've
     // changed since then by branching
     growth_energy: f64,
+    weight_product_sum: f64,
     population_goal: usize,
     strategy: Strat,
 }
@@ -226,6 +227,7 @@ impl <S: Strategy> DMC<S> {
             overcorrection: overcorrection,
             growth_energy: trial_energy,
             population_goal: population,
+            weight_product_sum: population as f64,
             strategy: strategy,
         }
     }
@@ -246,6 +248,7 @@ impl <S: Strategy> DMC<S> {
 
         // update walkers
         let mut weight_sum = 0.0;
+        let mut weight_product_sum = 0.0;
         for i in 0 .. population {
             let state = &mut self.state;
 
@@ -264,10 +267,12 @@ impl <S: Strategy> DMC<S> {
             let w = (time_step * (self.trial_energy - v)).exp();
             ix_mut!(state.weight_products, i) *= w;
             weight_sum += w;
+            weight_product_sum += w;
         }
 
         let avg_weight = weight_sum / self.population() as f64;
         self.growth_energy = self.trial_energy - avg_weight.ln() / time_step;
+        self.weight_product_sum = weight_product_sum;
         self.control_population();
     }
 
@@ -281,9 +286,18 @@ impl <S: Strategy> DMC<S> {
     }
 
     fn control_population(&mut self) {
-        self.trial_energy +=
+        let sign =
+            if self.weight_product_sum < self.population_goal as f64 {
+                1.0
+            } else {
+                -1.0
+            };
+        let growth_correction =
             (1.0 + self.overcorrection)
             * (self.growth_energy - self.trial_energy);
+        if sign * growth_correction > 0.0 {
+            self.trial_energy += growth_correction;
+        }
     }
 
     fn stats<W, F>(&self, trial_wavfun: &W, mut update_stats: F)
@@ -395,7 +409,7 @@ Options:
   --overcorrection=<overcorrection>
     Affects how much the trial energy should be overcorrected with respect to
     the growth energy.
-    [default: 0.2]
+    [default: 0.25]
 
   --dt=<dt>
     [default: 0.001]
