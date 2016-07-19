@@ -17,12 +17,12 @@ data = run("qmc", **{
     "branch_interval": 10,
 })
 fig, ax = plt.subplots()
-err = sqrt((data["avg_sq_energy"] - data["avg_energy"] ** 2)
-           / data["population"])
+err = sqrt((data["stats.sq_energy"] - data["stats.energy"] ** 2)
+           / data["stats.weight"])
 ax.fill_between(
     data["time"],
-    data["avg_energy"] - err,
-    data["avg_energy"] + err,
+    data["stats.energy"] - err,
+    data["stats.energy"] + err,
     alpha=0.8,
     linewidth=0)
 ax.plot(
@@ -30,4 +30,9 @@ ax.plot(
     data["growth_energy"],
     alpha=0.8,
     color="red")
+ax.plot(
+    data["time"],
+    data["stats.sq_x"],
+    alpha=0.8,
+    color="green")
 plt.show()

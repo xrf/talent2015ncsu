@@ -9,6 +9,49 @@ use rand::distributions::{Sample, IndependentSample};
 use rand::distributions::normal::StandardNormal;
 use qmc::utils::*;
 
+pub fn stdev(mean: f64, sum_squares: f64, total_weight: f64) -> f64 {
+    (sum_squares / total_weight - mean.powi(2)).sqrt()
+}
+
+#[derive(RustcEncodable)]
+pub struct Stats {
+    weight: f64,
+    energy: f64,
+    sq_energy: f64,
+    x: f64,
+    sq_x: f64,
+}
+
+impl Default for Stats {
+    fn default() -> Stats {
+        Stats {
+            weight: 0.0,
+            energy: 0.0,
+            sq_energy: 0.0,
+            x: 0.0,
+            sq_x: 0.0,
+        }
+    }
+}
+
+impl Stats {
+    fn update<W: WaveFunction>(&mut self, trial_wavfun: &W, w: f64, x: f64) {
+        let e = trial_wavfun.local_energy(x);
+        self.weight += w;
+        self.energy += w * e;
+        self.sq_energy += w * e.powi(2);
+        self.x += w * x;
+        self.sq_x += w * x.powi(2);
+    }
+
+    fn calc_average(&mut self) {
+        self.energy /= self.weight;
+        self.sq_energy /= self.weight;
+        self.x /= self.weight;
+        self.sq_x /= self.weight;
+    }
+}
+
 pub trait WaveFunction {
 
     /// Calculate `psi(x)`.
@@ -317,30 +360,17 @@ impl <S: Strategy> DMC<S> {
                           time_step: f64,
                           trial_wavfun: &W)
         where W: WaveFunction {
-        let mut denom = 0.0;
-        let mut stats = [0.0; 4];
-        self.stats(trial_wavfun, |u, x| {
-            let e = trial_wavfun.local_energy(x);
-            denom += u;
-            ix_mut!(stats, 0) += u * e;
-            ix_mut!(stats, 1) += u * e.powi(2);
-            ix_mut!(stats, 2) += u * x;
-            ix_mut!(stats, 3) += u * x.powi(2);
-        });
-        for stat in stats.iter_mut() {
-            *stat /= denom;
-        }
+        let mut stats: Stats = Default::default();
+        self.stats(trial_wavfun, |u, x| stats.update(trial_wavfun, u, x));
+        stats.calc_average();
         println!("{{");
         println!(" 'step_index': {},", step_index);
         println!(" 'time': {},", step_index as f64 * time_step);
         println!(" 'population': {},", self.population());
         println!(" 'trial_energy': {},", self.trial_energy);
         println!(" 'growth_energy': {},", self.growth_energy);
-        println!(" 'denominator': {},", denom);
-        println!(" 'avg_energy': {},", stats[0]);
-        println!(" 'avg_sq_energy': {},", stats[1]);
-        println!(" 'avg_x': {},", stats[2]);
-        println!(" 'avg_sq_x': {},", stats[3]);
+        println!(" 'stats': {},",
+                 rustc_serialize::json::encode(&stats).unwrap());
         println!("}},");
     }
 
