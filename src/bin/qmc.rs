@@ -549,44 +549,6 @@ fn main() {
     let sys = HO1D { omega: args.flag_omega };
     let trial_wavfun = HO1DTrial { system: &sys, alpha: args.flag_alpha };
 
-//     {
-//         let delta = 0.1;
-//         // vmc
-//         let mut walkers = QMCState {
-//             x: vec![0.0; population],
-//             w: vec![0.0; population],
-//         };
-//         let mut new_walkers = QMCState {
-//             x: vec![0.0; population],
-//             w: vec![0.0; population],
-//         };
-//         for i in 0 .. population {
-//             let StandardNormal(r) = rng.gen();
-//             let x = r / trial_wavefun.alpha.sqrt();
-//             ix!(walkers.x, i) = x;
-//             ix!(walkers.w, i) = trial_wavfun.eval(alpha, x).powi(2);
-// //            println!("{}", walkers.x[i]);
-//         }
-//         for n in 0 .. num_steps {
-//             for i in 0 .. population {
-//                 let new_x = ix!(walkers.x, i) + delta * (rng.next_f64() - 0.5);
-//                 let new_w = trial_wavfun.eval(alpha, new_x).powi(2);
-//                 if rng.next_f64() * ix!(walkers.w, i) < new_w {
-//                     ix!(walkers.x, i) = new_x;
-//                     ix!(walkers.w, i) = new_w;
-//                 }
-//             }
-
-//             let mut energy_sum = 0.0;
-//             for i in 0 .. population {
-//                 -0.5 * ((alpha * x).powi(2) - alpha)
-//                 0.5 * sys.omega.powi(2)
-//             }
-
-//         }
-//         std::process::exit(0);
-//     }
-
     dmc(&mut rng,
         args.flag_num_steps,
         args.flag_population,
