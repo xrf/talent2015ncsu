@@ -198,11 +198,13 @@ struct DMC<Strat> {
     state: DMCState,
     new_state: DMCState,
     trial_energy: f64,
+    overcorrection: f64,
+    // Note that we store the growth_energy directly instead of total weight
+    // or average weight because the population / trial_energy might've
+    // changed since then by branching
+    growth_energy: f64,
     population_goal: usize,
     strategy: Strat,
-    // Note that we store the average weight instead of total weight
-    // because the population might've changed since then
-    avg_weight: f64,
 }
 
 impl <S: Strategy> DMC<S> {
@@ -211,6 +213,7 @@ impl <S: Strategy> DMC<S> {
                  distribution: &D,
                  population: usize,
                  trial_energy: f64,
+                 overcorrection: f64,
                  strategy: S) -> Self
         where R: Rng,
               D: IndependentSample<f64> {
@@ -220,9 +223,10 @@ impl <S: Strategy> DMC<S> {
                                  initial_capacity),
             new_state: DMCState::with_capacity(initial_capacity),
             trial_energy: trial_energy,
+            overcorrection: overcorrection,
+            growth_energy: trial_energy,
             population_goal: population,
             strategy: strategy,
-            avg_weight: 1.0,
         }
     }
 
@@ -257,33 +261,29 @@ impl <S: Strategy> DMC<S> {
 
             // update the weight (this is the potential energy part)
             let v = self.strategy.potential_energy(trial_wavfun, new_x);
-            let w = (-time_step * (v - self.trial_energy)).exp();
-            weight_sum += w;
+            let w = (time_step * (self.trial_energy - v)).exp();
             ix_mut!(state.weight_products, i) *= w;
+            weight_sum += w;
         }
 
-        self.avg_weight = weight_sum / self.population() as f64;
-        self.control_population(0.01);
+        let avg_weight = weight_sum / self.population() as f64;
+        self.growth_energy = self.trial_energy - avg_weight.ln() / time_step;
+        self.control_population();
     }
 
     fn branch<R: Rng>(&mut self, rng: &mut R) {
         assert!(self.state.valid());
         assert!(self.new_state.len() == 0);
 
-        self.control_population(-0.01);
         self.new_state.branch_from(rng, &self.state);
         self.state.clear();
         std::mem::swap(&mut self.state, &mut self.new_state);
-        self.control_population(0.01);
     }
 
-    fn control_population(&mut self, increment: f64) {
+    fn control_population(&mut self) {
         self.trial_energy +=
-            if self.population() <= self.population_goal {
-                increment
-            } else {
-                -increment
-            };
+            (1.0 + self.overcorrection)
+            * (self.growth_energy - self.trial_energy);
     }
 
     fn stats<W, F>(&self, trial_wavfun: &W, mut update_stats: F)
@@ -316,13 +316,12 @@ impl <S: Strategy> DMC<S> {
         for stat in stats.iter_mut() {
             *stat /= denom;
         }
-        let growth_energy = self.trial_energy - self.avg_weight.ln() / time_step;
         println!("{{");
         println!(" 'step_index': {},", step_index);
         println!(" 'time': {},", step_index as f64 * time_step);
         println!(" 'population': {},", self.population());
         println!(" 'trial_energy': {},", self.trial_energy);
-        println!(" 'growth_energy': {},", growth_energy);
+        println!(" 'growth_energy': {},", self.growth_energy);
         println!(" 'denominator': {},", denom);
         println!(" 'avg_energy': {},", stats[0]);
         println!(" 'avg_sq_energy': {},", stats[1]);
@@ -339,6 +338,7 @@ fn dmc<R, S, F>(rng: &mut R,
                 time_step: f64,
                 trial_energy: f64,
                 trial_wavfun: &F,
+                overcorrection: f64,
                 print_interval: u64,
                 branch_interval: u64,
                 strategy: S)
@@ -349,7 +349,7 @@ fn dmc<R, S, F>(rng: &mut R,
     let num_prints = num_steps / (branches_per_print * branch_interval);
 
     let mut dmc = DMC::new(rng, trial_wavfun,
-                           initial_population, trial_energy, strategy);
+                           initial_population, trial_energy, overcorrection, strategy);
     println!("[");
 
     dmc.print_all_stats(0, time_step, trial_wavfun);
@@ -392,6 +392,11 @@ Options:
     Initial trial energy.
     [default: 0.6]
 
+  --overcorrection=<overcorrection>
+    Affects how much the trial energy should be overcorrected with respect to
+    the growth energy.
+    [default: 0.2]
+
   --dt=<dt>
     [default: 0.001]
 
@@ -418,6 +423,7 @@ struct Args {
     flag_omega: f64,
     flag_dt: f64,
     flag_trial_energy: f64,
+    flag_overcorrection: f64,
     flag_print_interval: u64,
     flag_branch_interval: u64,
     flag_population: usize,
@@ -478,6 +484,7 @@ fn main() {
         args.flag_dt,
         args.flag_trial_energy,
         &trial_wavfun,
+        args.flag_overcorrection,
         args.flag_print_interval,
         args.flag_branch_interval,
         NormalStrategy);
