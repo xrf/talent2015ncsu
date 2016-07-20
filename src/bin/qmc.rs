@@ -569,7 +569,7 @@ fn main() {
             vmc(&mut rng,
                 args.flag_num_steps,
                 100,
-                100,
+                args.flag_population,
                 &trial_wavfun,
                 &Range::new(-1.0, 1.0),
                 0.2).x_positions
