@@ -9,9 +9,11 @@ name = "qmc"
 crate-type = ["dylib", "rlib"]
 
 [dependencies]
+blas-sys = { version = "0.6.3", features = ["openblas"] }
 docopt = "0.6.81"
 libc = "*"
 modulo = "0.1.1"
+ndarray = { version = "0.6.0", features = ["blas"] }
 num = "0.1.34"
 rand = "0.3"
 rustc-serialize = "0.3.19"
