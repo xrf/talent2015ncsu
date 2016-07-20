@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-import base64, os
+import os, sys
 import numpy as np
 import numpy.random as npr
 import matplotlib.pyplot as plt
@@ -7,16 +7,14 @@ import pandas as pd
 from numpy import sqrt
 from utils import *
 
-seed = base64.b16encode(os.urandom(20)).decode("ascii")
-print("seed: {0}".format(seed))
-data = run("qmc", **{
-    "seed": seed,
-    "population": 10000,
-    "num_steps": 10000,
-    "print_interval": 10,
-    "dt": 0.001,
-    "branch_interval": 10,
-})
+args = []
+quiet = False
+for arg in sys.argv[1:]:
+    if arg == "-q":
+        quiet = True
+    else:
+        args.append(arg)
+data = run(os.path.basename(__file__), *args, quiet=quiet)
 fig, ax = plt.subplots()
 data = [flatten_dict(x) for x in data["dmc"]]
 data = pd.DataFrame.from_records(data)

@@ -63,7 +63,7 @@ pub struct RandomSeed {
 /// Decode a hex byte string in a little endian format.  If the last byte is
 /// contains only a single digit, it is padded with zero.  For example,
 /// `abcde` is decoded as `[0xba, 0xdc, 0x0e]` or `[186, 220, 14]`.
-fn decode_hex_le(string: &str)
+pub fn decode_hex_le(string: &str)
                  -> Result<Vec<u8>, rustc_serialize::hex::FromHexError> {
     let mut s = String::new();
     let mut prev_c = None;
@@ -86,11 +86,8 @@ fn decode_hex_le(string: &str)
     rustc_serialize::hex::FromHex::from_hex(s.as_str())
 }
 
-impl rustc_serialize::Decodable for RandomSeed {
-    fn decode<D: rustc_serialize::Decoder>(d: &mut D)
-                                           -> Result<RandomSeed, D::Error> {
-        decode_hex_le(&try!(d.read_str()))
-            .map(|x| RandomSeed { value: x.to_vec() })
-            .map_err(|e| d.error(e.description()))
-    }
+pub fn decode_seed(seed: &str) -> Vec<u8> {
+    decode_hex_le(seed).unwrap_or_else(|e| {
+        panic!("invalid hexadecimal value: {} ({})", seed, e.description())
+    })
 }
