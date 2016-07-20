@@ -1,8 +1,11 @@
-pub mod mt;
-pub mod utils;
-
 extern crate modulo;
 extern crate rand;
+extern crate rustc_serialize;
+
+#[macro_use]
+pub mod utils;
+pub mod mt;
+pub mod qmc;
 
 use utils::MyRng;
 use std::io::Write;

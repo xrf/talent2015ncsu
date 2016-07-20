@@ -3,6 +3,7 @@ extern crate rand;
 extern crate rustc_serialize;
 
 use std::error::Error;
+use std::io::Write;
 use std::ops::{BitOrAssign, Shl};
 use rand::SeedableRng;
 
@@ -49,17 +50,6 @@ pub fn repack_u8s<T>(s: &[u8]) -> Vec<T> where
     v
 }
 
-pub fn rng_from_seed(seed: &[u8]) -> MyRng {
-    MyRng::from_seed(&repack_u8s(seed))
-}
-
-/// Data type used for command-line arguments.
-#[derive(Debug)]
-pub struct RandomSeed {
-    /// Value of the seed.
-    pub value: Vec<u8>,
-}
-
 /// Decode a hex byte string in a little endian format.  If the last byte is
 /// contains only a single digit, it is padded with zero.  For example,
 /// `abcde` is decoded as `[0xba, 0xdc, 0x0e]` or `[186, 220, 14]`.
@@ -88,6 +78,17 @@ pub fn decode_hex_le(string: &str)
 
 pub fn decode_seed(seed: &str) -> Vec<u8> {
     decode_hex_le(seed).unwrap_or_else(|e| {
-        panic!("invalid hexadecimal value: {} ({})", seed, e.description())
+        writeln!(::std::io::stderr(),
+                 "invalid hexadecimal value: {} ({})",
+                 seed, e.description()).unwrap();
+        ::std::process::exit(1)
     })
+}
+
+pub fn rng_from_seed(seed: &[u8]) -> MyRng {
+    MyRng::from_seed(&repack_u8s(seed))
+}
+
+pub fn stdev(mean: f64, sum_squares: f64, total_weight: f64) -> f64 {
+    (sum_squares / total_weight - mean.powi(2)).sqrt()
 }
