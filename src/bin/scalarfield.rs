@@ -39,6 +39,9 @@ Options:
   --param-m-sq=<param-m-sq>
     [default: 1.0]
 
+  --param-lambda=<param-lambda>
+    [default: 0.0]
+
   --rate=<rate>
     Determines how much we should perturb the values of the scalar field.
     [default: 1.0]
@@ -52,7 +55,13 @@ struct Args {
     flag_param_l: usize,
     flag_param_lt: usize,
     flag_param_m_sq: f64,
+    flag_param_lambda: f64,
     flag_rate: f64,
+}
+
+struct System {
+    m_sq: f64,
+    lambda: f64,
 }
 
 #[allow(dead_code)]
@@ -82,14 +91,14 @@ fn action(m_sq: f64,
     -r1 + 0.5 * (8.0 + m_sq) * r2
 }
 
-fn nearby_action(m_sq: f64,
+fn nearby_action(sys: &System,
                  l: usize,
                  lt: usize,
                  phi: &ArrayView<f64, (usize, usize, usize, usize)>,
                  n: (usize, usize, usize, usize),
                  phi_n: f64)
                  -> f64{
-    let c = 0.5 * (8.0 + m_sq);
+    let c = 0.5 * (8.0 + sys.m_sq);
     let (nx, ny, nz, nt) = n;
     phi_n * (-(
         phi[((nx + 1) % l, ny, nz, nt)]
@@ -100,12 +109,12 @@ fn nearby_action(m_sq: f64,
       + phi[(nx, (ny + l - 1) % l, nz, nt)]
       + phi[(nx, ny, (nz + l - 1) % l, nt)]
       + phi[(nx, ny, nz, (nt + l - 1) % lt)]
-    ) + c * phi_n)
+    ) + c * phi_n - sys.lambda / 24.0 * phi_n.powi(3))
 }
 
 fn mcmc_step<R: Rng>(rng: &mut R,
                      phi: &mut ArrayViewMut<f64, (usize, usize, usize, usize)>,
-                     m_sq: f64,
+                     sys: &System,
                      l: usize,
                      lt: usize,
                      rate: f64) {
@@ -120,8 +129,8 @@ fn mcmc_step<R: Rng>(rng: &mut R,
     let old_phi = phi[(nx, ny, nz, nt)];
     let new_phi = old_phi + dphi;
     let p_ratio = (
-       -nearby_action(m_sq, l, lt, &phi.view(), (nx, ny, nz, nt), new_phi)
-      + nearby_action(m_sq, l, lt, &phi.view(), (nx, ny, nz, nt), old_phi)
+       -nearby_action(sys, l, lt, &phi.view(), (nx, ny, nz, nt), new_phi)
+      + nearby_action(sys, l, lt, &phi.view(), (nx, ny, nz, nt), old_phi)
     ).exp();
     if p_ratio >= 1.0 || rng.next_f64() < p_ratio {
         phi[(nx, ny, nz, nt)] = new_phi;
@@ -162,7 +171,7 @@ fn exact_pcf(m_sq: f64,
 }
 
 fn mcmc_pcf<R: Rng>(rng: &mut R,
-                    m_sq: f64,
+                    sys: &System,
                     l: usize,
                     lt: usize,
                     n_minus_m_args: &[(usize, usize, usize, usize)],
@@ -174,7 +183,7 @@ fn mcmc_pcf<R: Rng>(rng: &mut R,
     let mut pcfs = vec![0.0; n_minus_m_args.len()];
     write!(stderr(), "#").unwrap();
     for k in 0 .. num_samples {
-        mcmc_step(rng, &mut phi.view_mut(), m_sq, l, lt, rate);
+        mcmc_step(rng, &mut phi.view_mut(), sys, l, lt, rate);
         // note that we do not sample over the entire 4D volume
         // because it can increase the computational cost significantly
         // which means we would be forced to do fewer MCMC iterations
@@ -221,7 +230,10 @@ fn main() {
 
     let l = args.flag_param_l;
     let lt = args.flag_param_lt;
-    let m_sq = args.flag_param_m_sq;
+    let sys = System {
+        m_sq: args.flag_param_m_sq,
+        lambda: args.flag_param_lambda,
+    };
 
     let n_minus_m_args: Vec<_> = (0 .. l).map(|nx| (nx, 0, 0, 0)).collect();
 
@@ -229,12 +241,12 @@ fn main() {
     stderr().flush().unwrap();
     let mut pcfs_exact = Vec::new();
     for n_minus_m in n_minus_m_args.iter() {
-        pcfs_exact.push(exact_pcf(m_sq, l, lt, *n_minus_m));
+        pcfs_exact.push(exact_pcf(sys.m_sq, l, lt, *n_minus_m));
     }
 
     writeln!(stderr(), "# Calculating using MCMC ...").unwrap();
     stderr().flush().unwrap();
-    let pcfs_mcmc = mcmc_pcf(&mut rng, m_sq, l, lt, &n_minus_m_args,
+    let pcfs_mcmc = mcmc_pcf(&mut rng, &sys, l, lt, &n_minus_m_args,
                              args.flag_num_samples, args.flag_rate);
 
     println!("{{");
