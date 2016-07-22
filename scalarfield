@@ -1,0 +1,15 @@
+#!/usr/bin/env python
+import os, sys
+import numpy as np
+import matplotlib.pyplot as plt
+import pandas as pd
+from numpy import sqrt
+from utils import *
+
+data = run(os.path.basename(__file__), *sys.argv[1:])
+fig, ax = plt.subplots()
+nx = range(len(data["analytic"]))
+ax.plot(nx, data["analytic"], label="analytic")
+ax.plot(nx, data["mcmc"], label="mcmc")
+ax.legend()
+plt.show()
