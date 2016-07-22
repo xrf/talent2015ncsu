@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 import os, sys
 import numpy as np
-import numpy.random as npr
 import matplotlib.pyplot as plt
 import pandas as pd
 from numpy import sqrt

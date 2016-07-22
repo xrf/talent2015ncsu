@@ -36,7 +36,7 @@ struct Args {
     flag_num_samples: u64,
 }
 
-fn arr2_powi(base: &Array<f64, (usize, usize)>,
+fn arr2_powi(base: &ArrayView<f64, (usize, usize)>,
              power: u64)
              -> Array<f64, (usize, usize)> {
     let mut m = Array::eye(base.shape()[0]);
@@ -47,7 +47,7 @@ fn arr2_powi(base: &Array<f64, (usize, usize)>,
 }
 
 fn get_sample<R: Rng>(rng: &mut R,
-                      transition_matrix: &Array<f64, (usize, usize)>,
+                      transition_matrix: &ArrayView<f64, (usize, usize)>,
                       num_samples: u64) -> (u64, u64) {
     let range = Range::new(0, 3);
     let mut state = vec![0; 21];
@@ -92,7 +92,9 @@ fn main() {
 
     let state0 = arr1(&[1.0, 0.0, 0.0]);
 
-    let f = |n| state0.dot(&arr2_powi(&transition_matrix, n).dot(&state0));
+    let f = |n| state0
+        .dot(&arr2_powi(&transition_matrix.view(), n)
+             .dot(&state0));
 
     let (r_a, r_b) = {
         print!("#");
@@ -108,15 +110,18 @@ fn main() {
             if num_samples == 0 {
                 break;
             }
-            let (a, b) = get_sample(&mut rng, &transition_matrix, num_samples);
+            let (a, b) = get_sample(&mut rng,
+                                    &transition_matrix.view(),
+                                    num_samples);
             s_18_a += a;
             s_18_b += b;
             samples_collected += num_samples;
-            print!("\r# {:3}%", samples_collected * 100 / args.flag_num_samples);
+            print!("\r# {:3}%",
+                   samples_collected * 100 / args.flag_num_samples);
             std::io::stdout().flush().unwrap();
         }
         println!("\r#     ");
-        let a = state0.dot(&arr2_powi(&transition_matrix, 2).dot(&state0));
+        let a = f(2);
         let b = transition_matrix[(0, 0)].powi(2);
         let s_20 = args.flag_num_samples;
         ((s_20 as f64) / (s_18_a as f64) * a,

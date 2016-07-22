@@ -16,8 +16,9 @@ def run(name, *args, quiet=False):
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE, universal_newlines=True)
     out = []
     for line in p.stdout:
-        if not quiet or line.startswith("#"):
+        if not quiet:
             sys.stdout.write(line)
+            sys.stdout.flush()
         out.append(line)
     p.wait()
     if p.returncode:
