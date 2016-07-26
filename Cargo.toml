@@ -11,6 +11,7 @@ crate-type = ["dylib", "rlib"]
 [dependencies]
 blas-sys = { version = "0.6.3", features = ["openblas"] }
 docopt = "0.6.81"
+la = "0.2.0"
 libc = "*"
 modulo = "0.1.1"
 ndarray = { version = "0.6.0", features = ["blas"] }
