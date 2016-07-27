@@ -63,6 +63,41 @@ struct Args {
     flag_param_g: f64,
 }
 
+fn log_det_sq(m: &ArrayView<f64, (usize, usize)>) -> f64 {
+    let n = m.shape()[0];
+    assert_eq!(n, m.shape()[1]);
+    let m = ::la::Matrix::new(n, n, m.iter().cloned().collect());
+    let lu = ::la::LUDecomposition::new(&m);
+    let mut z = 0.0;
+    for i in 0 .. n {
+        z +=
+            lu.get_l().get(i, i).abs().ln() +
+            lu.get_u().get(i, i).abs().ln();
+    }
+    2.0 * z
+}
+
+fn kinetic_matrix(nx: usize) -> Array<f64, (usize, usize)> {
+    let mut t = Array::zeros((nx, nx));
+    for i in 0 .. nx {
+        t[(i, (i + nx - 1) % nx)] = 1.0;
+        t[(i, i)] = -2.0;
+        t[(i, (i + 1) % nx)] = 1.0;
+    }
+    t
+}
+
+fn apply_potential(sqrt_c: f64,
+                   transfer: &mut ArrayViewMut<f64, (usize, usize)>,
+                   sigma: &ArrayView<i8, usize>) {
+    let nx = transfer.shape()[0];
+    for x in 0 .. nx {
+        for i in 0 .. nx {
+            transfer[(x, i)] *= 1.0 + sqrt_c * sigma[x] as f64;
+        }
+    }
+}
+
 struct PartitionFunction {
     sqrt_c: f64,
     evolve_kinetic: Array<f64, (usize, usize)>,
@@ -72,14 +107,8 @@ impl PartitionFunction {
     fn new(nx: usize, dt: f64, mdx2: f64, g: f64) -> PartitionFunction {
         PartitionFunction {
             sqrt_c: (dt * g).exp() - 1.0,
-            evolve_kinetic: {
-                let mut t = Array::zeros((nx, nx));
-                for i in 0 .. nx {
-                    t[(i, (i + nx - 1) % nx)] = 1.0;
-                    t[(i, i)] = -2.0;
-                    t[(i, (i + 1) % nx)] = 1.0;
-                }
-                // -dt T / 2 = (-dt / 2) (-1 / 2 m) (1 / dx^2) finite_diff
+            evolve_kinetic:  {
+                let mut t = kinetic_matrix(nx);
                 t *= 0.25 * dt / mdx2;
                 Array::eye(nx) - t
             },
@@ -87,22 +116,18 @@ impl PartitionFunction {
     }
 
     fn eval(&self, sigma: &ArrayView<i8, (usize, usize)>) -> f64 {
-        let nx = sigma.shape()[0];
-        let nt = sigma.shape()[1];
+        let nt = sigma.shape()[0];
+        let nx = sigma.shape()[1];
         let mut transfer = Array::eye(nx);
         for t in 0 .. nt {
             transfer = self.evolve_kinetic.dot(&transfer);
-            for i in 0 .. nx {
-                for x in 0 .. nx {
-                    transfer[(x, i)] *=
-                        1.0 + self.sqrt_c * sigma[(x, t)] as f64;
-                }
-            }
+            apply_potential(self.sqrt_c,
+                            &mut transfer.view_mut(),
+                            &sigma.subview(Axis(0), t));
             transfer = self.evolve_kinetic.dot(&transfer);
         }
         let fermi = Array::eye(nx) + transfer;
-        ::la::Matrix::new(nx, nx, fermi.iter().cloned().collect())
-            .det().powi(2)
+        log_det_sq(&fermi.view())
     }
 }
 
@@ -131,23 +156,23 @@ fn main() {
     let t_range = Range::new(0, nt);
     let partition_function = PartitionFunction::new(nx, dt, mdx2, g);
 
-    let mut sigma = Array::from_elem((nx, nt), 1i8);
+    let mut sigma = Array::from_elem((nt, nx), 1i8);
     let mut z = partition_function.eval(&sigma.view());
     for _ in 0 .. num_samples {
 
         for _ in 0 .. sampling_interval {
             let x_change = x_range.ind_sample(&mut rng);
             let t_change = t_range.ind_sample(&mut rng);
-            sigma[(x_change, t_change)] *= -1;
+            sigma[(t_change, x_change)] *= -1;
 
             let new_z = partition_function.eval(&sigma.view());
             println!("# {} -> {}", z, new_z);
 
-            if rng.next_f64() * z < new_z {
+            if rng.next_f64() < (new_z - z).exp() {
                 z = new_z
             } else {
                 println!("# rejected");
-                sigma[(x_change, t_change)] *= -1;
+                sigma[(t_change, x_change)] *= -1;
             }
         }
 
